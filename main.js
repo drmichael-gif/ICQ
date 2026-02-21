@@ -35,7 +35,6 @@ function createMainWindow() {
   });
 
   // Remove CSP on BOTH default session AND the webview's persist:whatsapp session
-  const { session: electronSession } = require('electron');
   function patchSession(sess) {
     sess.webRequest.onHeadersReceived((details, callback) => {
       const headers = { ...details.responseHeaders };
