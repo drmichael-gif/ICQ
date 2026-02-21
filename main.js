@@ -140,20 +140,40 @@ async function captureChat() {
   if (!waWindow || waWindow.isDestroyed()) return;
   if (!icqWindow || icqWindow.isDestroyed()) return;
   try {
-    const rect = await waWindow.webContents.executeJavaScript(`
+    // Get #main position, fall back to right 66% of window if missing
+    const info = await waWindow.webContents.executeJavaScript(`
       (function(){
         const m = document.getElementById('main');
-        if (!m) return null;
+        const ws = { w: window.innerWidth, h: window.innerHeight };
+        if (!m) return { found: false, ws };
         const r = m.getBoundingClientRect();
-        return { x: Math.round(r.x), y: Math.round(r.y),
+        return { found: true, ws,
+                 x: Math.round(r.x), y: Math.round(r.y),
                  width: Math.round(r.width), height: Math.round(r.height) };
       })()`);
-    if (!rect || rect.width < 10 || rect.height < 10) return;
-    const img     = await waWindow.webContents.capturePage(rect);
-    if (img.isEmpty()) return;
-    const resized = img.resize({ width: Math.min(rect.width, 900), quality: 'good' });
+
+    console.log('[ICQ] captureChat info:', JSON.stringify(info));
+
+    let img;
+    if (info?.found && info.width > 10 && info.height > 10) {
+      // Capture just the #main panel
+      img = await waWindow.webContents.capturePage({
+        x: info.x, y: info.y, width: info.width, height: info.height
+      });
+    } else {
+      // Fallback: capture full window (shows whole WA interface — still useful)
+      console.log('[ICQ] #main not ready, capturing full window');
+      img = await waWindow.webContents.capturePage();
+    }
+
+    if (!img || img.isEmpty()) {
+      console.log('[ICQ] capturePage returned empty image');
+      return;
+    }
+    const sz      = img.getSize();
+    const resized = img.resize({ width: Math.min(sz.width, 900), quality: 'good' });
     icqWindow.webContents.send('wa-chat-img', 'data:image/png;base64,' + resized.toPNG().toString('base64'));
-  } catch (e) { console.error('[ICQ] captureChat error:', e.message); }
+  } catch (e) { console.error('[ICQ] captureChat error:', e.message, e.stack); }
 }
 
 function startCapture() {
@@ -278,11 +298,12 @@ ipcMain.on('wa-click-contact', async (e, index) => {
   if (!waWindow || waWindow.isDestroyed()) return;
   const i = index | 0;
   try {
-    await waWindow.webContents.executeJavaScript(`
+    const result = await waWindow.webContents.executeJavaScript(`
       (function(){
         const sels = [
           '[data-testid="cell-frame-container"]',
           '[data-testid^="cell-frame"]',
+          '[data-testid="chat-list-item"]',
           '#side [role="listitem"]',
           '[aria-label*="Chat list"] [role="listitem"]',
         ];
@@ -291,8 +312,14 @@ ipcMain.on('wa-click-contact', async (e, index) => {
           cells = Array.from(document.querySelectorAll(s));
           if (cells.length > 0) break;
         }
-        if (cells[${i}]) cells[${i}].click();
+        const cell = cells[${i}];
+        if (!cell) return { ok: false, total: cells.length };
+        cell.click();
+        return { ok: true, total: cells.length, name: cell.textContent?.slice(0,30) };
       })()`);
+    console.log('[ICQ] wa-click-contact index:', i, 'result:', JSON.stringify(result));
+    // Start capture loop — first shot at 800ms, then every 1.5s
+    setTimeout(captureChat, 800);
     setTimeout(startCapture, 1500);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
