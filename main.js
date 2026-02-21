@@ -146,6 +146,11 @@ function createMainWindow() {
     }
   }, 5000);
 
+  // Log load errors (helps debug blank screen)
+  mainWindow.webContents.on('did-fail-load', (event, code, desc, url) => {
+    console.error('[ICQ] LOAD FAILED:', code, desc, url);
+  });
+
   mainWindow.webContents.on('did-stop-loading', () => {
     setTimeout(() => {
       if (splashWindow && !splashWindow.isDestroyed()) {
@@ -154,6 +159,10 @@ function createMainWindow() {
       }
       mainWindow.show();
       mainWindow.focus();
+      // Open DevTools in dev mode to help debug
+      if (process.env.ICQ_DEBUG) {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+      }
     }, 2000);
   });
 
