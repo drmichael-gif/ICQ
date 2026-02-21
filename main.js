@@ -113,19 +113,11 @@ function createWaWindow() {
   });
 
   waWindow.webContents.setUserAgent(WA_UA);
-
-  // Apply viewport IMMEDIATELY after loadURL (same call stack — before WASM starts)
-  waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
   waWindow.webContents.setBackgroundThrottling(false);
-  waWindow.setSize(1280, 900);
-  waWindow.webContents.enableDeviceEmulation({
-    screenPosition: 'desktop',
-    screenSize:     { width: 1280, height: 900 },
-    viewPosition:   { x: 0, y: 0 },
-    deviceScaleFactor: 1,
-    viewSize:       { width: 1280, height: 900 },
-    fitToView:      false,
-  });
+
+  // show:true + 1280×900 = full viewport already. No enableDeviceEmulation needed
+  // (that caused V8 crashes on macOS ARM; visible window already has correct dimensions)
+  waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
 
   let loaded = false;
   const onLoad = () => {
