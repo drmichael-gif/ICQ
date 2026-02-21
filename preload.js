@@ -1,14 +1,25 @@
+/**
+ * preload.js — bridge for app.html (ICQ UI)
+ */
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('icq', {
+  // Window chrome
   minimize:     () => ipcRenderer.send('win-minimize'),
   maximize:     () => ipcRenderer.send('win-maximize'),
   close:        () => ipcRenderer.send('win-close'),
-  clickContact: (i)    => ipcRenderer.send('wa-click-contact', i),
-  sendMessage:  (text) => ipcRenderer.send('wa-send-message',  text),
-  showWa:       ()     => ipcRenderer.send('wa-show'),
-  onData:       (cb) => ipcRenderer.on('wa-data',     (e, d) => cb(d)),
-  onStatus:     (cb) => ipcRenderer.on('wa-status',   (e, d) => cb(d)),
-  onMessages:   (cb) => ipcRenderer.on('wa-messages', (e, d) => cb(d)),  // structured text
-  onChatImg:    (cb) => ipcRenderer.on('wa-chat-img', (e, s) => cb(s)),  // screenshot fallback
+
+  // User actions → hidden WhatsApp
+  clickContact: (index) => ipcRenderer.send('wa-click-contact', index),
+  sendMessage:  (text)  => ipcRenderer.send('wa-send-message', text),
+  showWa:       ()      => ipcRenderer.send('wa-show'),
+
+  // Data from hidden WhatsApp → ICQ UI
+  onData:    (cb) => ipcRenderer.on('wa-data',    (e, d) => cb(d)),
+  onStatus:  (cb) => ipcRenderer.on('wa-status',  (e, d) => cb(d)),
+
+  // Screenshot fallback
+  onChatImg:  (cb) => ipcRenderer.on('wa-chat-img',  (e, src)  => cb(src)),
+  // Structured messages from OCR window
+  onMessages: (cb) => ipcRenderer.on('wa-messages',  (e, msgs) => cb(msgs)),
 });
