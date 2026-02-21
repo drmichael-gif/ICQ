@@ -162,33 +162,32 @@ function createWaWindow() {
 
   waWindow = new BrowserWindow({
     width: 1280, height: 900,
-    skipTaskbar: true,   // don't show in Windows taskbar
-    show: false,
+    show: false,                    // keep hidden — Electron still renders it
+    paintWhenInitiallyHidden: true, // explicit: paint even when show:false
     webPreferences: {
-      contextIsolation: false,
-      nodeIntegration: false,
-      partition: 'persist:whatsapp',
+      contextIsolation:  false,
+      nodeIntegration:   false,
+      partition:         'persist:whatsapp',
+      backgroundThrottling: false,  // prevent rendering slowdowns
     },
   });
 
   waWindow.webContents.setUserAgent(WA_UA);
-  waWindow.webContents.setBackgroundThrottling(false);
 
-  // Make it invisible but RENDERED so virtual scroll & capturePage work
-  waWindow.setOpacity(0);
-  waWindow.showInactive();  // show without stealing focus
-
-  // Force a real viewport so virtual scrolling renders items
-  waWindow.webContents.enableDeviceEmulation({
-    screenPosition:    'desktop',
-    screenSize:        { width: 1280, height: 900 },
-    viewPosition:      { x: 0, y: 0 },
-    deviceScaleFactor: 1,
-    viewSize:          { width: 1280, height: 900 },
-    fitToView:         false,
+  // Enable device emulation after DOM is ready (not before — can crash)
+  waWindow.webContents.on('dom-ready', () => {
+    try {
+      waWindow.webContents.enableDeviceEmulation({
+        screenPosition:    'desktop',
+        screenSize:        { width: 1280, height: 900 },
+        viewPosition:      { x: 0, y: 0 },
+        deviceScaleFactor: 1,
+        viewSize:          { width: 1280, height: 900 },
+        fitToView:         false,
+      });
+    } catch (e) { console.error('[ICQ] enableDeviceEmulation error:', e.message); }
   });
 
-  waWindow.webContents.setUserAgent(WA_UA);
   waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
 
   waWindow.webContents.on('did-fail-load', (e, code, desc) => {
@@ -233,7 +232,6 @@ function createWaWindow() {
 // ── IPC: show WA window for QR scan ──────────────────────────────────────────
 ipcMain.on('wa-show', () => {
   if (!waWindow || waWindow.isDestroyed()) return;
-  waWindow.setOpacity(1);
   waWindow.show();
   waWindow.focus();
   const poll = setInterval(async () => {
@@ -244,8 +242,7 @@ ipcMain.on('wa-show', () => {
       );
       if (ok) {
         clearInterval(poll);
-        waWindow.setOpacity(0);
-        waWindow.blur();
+        waWindow.hide();  // back to hidden after login
         statusSent = false;
         startContactLoop();
       }
@@ -333,7 +330,7 @@ function createIcqWindow() {
 
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'ICQ', submenu: [
-      { label: 'Show WhatsApp window', click: () => { waWindow?.setOpacity(1); waWindow?.show(); waWindow?.focus(); } },
+      { label: 'Show WhatsApp window', click: () => { waWindow?.show(); waWindow?.focus(); } },
       { label: 'Reload WhatsApp',      click: () => { statusSent = false; stopCapture(); waWindow?.webContents.reload(); } },
       { type: 'separator' },
       { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
