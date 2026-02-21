@@ -95,19 +95,13 @@ div[style*="background-color: rgb(42"] {
 }
 
 /* ── HIDE WhatsApp native nav/sidebar ── */
-/* New left icon nav bar (Chats/Status/Channels/Communities tabs) */
-#app > div > div > div:not(#pane-side):not(#side):not(#main):not([data-testid="two-panel-layout-side"]):not([data-testid="chat"]),
+/* Target ONLY specific nav elements — NOT broad :not() selectors */
 nav[aria-label],
 [data-testid="side-menu"],
 [data-testid="chatlist-header"],
-#app > div > div > nav,
-#app > div > div > aside,
 #app nav,
 #app aside,
-div[role="navigation"],
-[class*="nav-bar"],
-[class*="navbar"],
-/* WA top header (says "WhatsApp") */
+/* WA top header inside side panel */
 #side > header,
 #side > div > header,
 /* WA filter pills (All / Unread / Favorites) */
@@ -512,10 +506,10 @@ footer [data-icon="camera"] { display: none !important; }
 .icq-welcome-flower { width: 80px; height: 80px; }
 .icq-welcome h2 { font-size: 20px; font-weight: bold; color: #000 !important; margin: 0; }
 .icq-welcome p  { font-size: 12px; color: var(--chat-gray) !important; margin: 0; }
-/* Hide WA's native intro content */
+/* Hide WA branding logos — NOT [data-testid="startup"] (that's the QR/login screen!) */
 [data-testid="intro-md-beta-logo-dark"],
 [data-testid="intro-md-beta-logo-light"],
-[data-testid="startup"], [data-testid="intro-image"],
+[data-testid="intro-image"],
 [data-icon="wa-logo"] { display: none !important; }
 
 /* ── WIN98 SCROLLBARS ── */
