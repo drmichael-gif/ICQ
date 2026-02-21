@@ -140,21 +140,59 @@ const MESSAGE_SCRAPER = `
 (function() {
   try {
     const main = document.getElementById('main');
-    if (!main) return { ok: false, error: 'no #main' };
+    if (!main) {
+      console.log('[ICQ msg] no #main element');
+      return { ok: false, error: 'no #main' };
+    }
+
+    // ── Diagnostic: log what's in #main ──
+    const allTestIds = [...new Set(Array.from(main.querySelectorAll('[data-testid]'))
+      .map(el => el.getAttribute('data-testid')).filter(Boolean))].slice(0, 30);
+    const allRoles = [...new Set(Array.from(main.querySelectorAll('[role]'))
+      .map(el => el.getAttribute('role')).filter(Boolean))].slice(0, 20);
+    console.log('[ICQ msg] #main testids:', allTestIds.join(', '));
+    console.log('[ICQ msg] #main roles:', allRoles.join(', '));
 
     const messages = [];
 
-    // Find message containers — try several selectors
-    let rows = Array.from(main.querySelectorAll('[data-testid="msg-container"]'));
-    if (!rows.length) rows = Array.from(main.querySelectorAll('[data-id]'));
-    if (!rows.length) rows = Array.from(main.querySelectorAll('[role="row"]'));
+    // ── Try many selectors for message rows ──
+    const rowSelectors = [
+      '[data-testid="msg-container"]',
+      '[data-id]',
+      '[role="row"]',
+      '[role="listitem"]',
+      '[data-testid="conversation-panel-messages"] > div > div',
+      '[aria-label*="Message list"] [role="listitem"]',
+      '.message-in, .message-out',
+    ];
+    let rows = [];
+    for (const sel of rowSelectors) {
+      try {
+        const found = Array.from(main.querySelectorAll(sel));
+        if (found.length > 0) {
+          console.log('[ICQ msg] matched selector:', sel, 'count:', found.length);
+          rows = found;
+          break;
+        }
+      } catch(_) {}
+    }
 
-    rows.forEach(row => {
-      // ── Text ──
+    if (!rows.length) {
+      // Last resort: find anything in main with a selectable-text span
+      rows = Array.from(main.querySelectorAll('*')).filter(el =>
+        el.querySelector && el.querySelector('span.selectable-text')
+      ).slice(0, 100);
+      console.log('[ICQ msg] fallback: found', rows.length, 'elements with selectable-text');
+    }
+
+    rows.forEach((row, idx) => {
+      // ── Text: try many approaches ──
       const textEl =
         row.querySelector('[data-testid="msg-text"]') ||
+        row.querySelector('span.selectable-text.copyable-text') ||
         row.querySelector('span.selectable-text') ||
-        row.querySelector('[class*="selectable"] span');
+        row.querySelector('[class*="selectable"]') ||
+        row.querySelector('[class*="message-text"]');
       const text = (textEl?.innerText || textEl?.textContent || '').trim();
 
       // ── Media labels ──
@@ -163,38 +201,44 @@ const MESSAGE_SCRAPER = `
       const hasVideo = !!row.querySelector('video, [data-testid*="video"]');
       const hasStick = !!row.querySelector('[data-testid*="sticker"]');
 
-      const displayText = text ||
-        (hasStick ? '🎭 Sticker' : hasImg ? '📷 Photo' : hasAudio ? '🎵 Audio' : hasVideo ? '🎬 Video' : '');
+      const displayText = text
+        || (hasStick ? '🎭 Sticker' : hasImg ? '📷 Photo' : hasAudio ? '🎵 Audio' : hasVideo ? '🎬 Video' : '');
       if (!displayText) return;
 
-      // ── Outgoing? (delivery check icons only appear on our own messages) ──
+      // ── Outgoing? ──
       const isOut = !!(
         row.querySelector('[data-testid="msg-dbl-check"]') ||
         row.querySelector('[data-testid="msg-check"]') ||
-        row.querySelector('[data-testid="msg-time-read"]') ||
         row.querySelector('[data-icon="msg-dbl-check"]') ||
-        row.querySelector('[data-icon="msg-check"]')
+        row.querySelector('[data-icon="msg-check"]') ||
+        (row.className && (row.className.includes('message-out') || row.className.includes('outgoing')))
       );
 
       // ── Time ──
-      const timeEl = row.querySelector('[data-testid="msg-time"]');
-      const time   = (timeEl?.textContent || '').trim();
+      const timeEl = row.querySelector('[data-testid="msg-time"]') ||
+                     row.querySelector('[class*="timestamp"]') ||
+                     row.querySelector('span[dir="auto"] > span');
+      const time = (timeEl?.textContent || '').trim().slice(0, 10);
 
-      // ── Sender (group chats) ──
-      const senderEl = row.querySelector('[data-testid="author"]');
-      const sender   = (senderEl?.textContent || '').trim();
+      // ── Sender ──
+      const senderEl = row.querySelector('[data-testid="author"]') ||
+                       row.querySelector('[aria-label*="said"]');
+      const sender = (senderEl?.textContent || '').trim();
 
-      // ── Stable ID for deduplication ──
+      // ── Stable ID ──
       const id = row.getAttribute('data-id') ||
                  row.getAttribute('data-key-id') ||
-                 (displayText + time + (isOut ? 'o' : 'i')).replace(/\\W/g, '').slice(0, 40);
+                 (idx + ':' + displayText.slice(0,20) + time);
 
       messages.push({ id, text: displayText, isOut, time, sender });
     });
 
-    console.log('[ICQ msg scraper] main found, rows:', rows.length, 'messages:', messages.length);
+    console.log('[ICQ msg] rows:', rows.length, 'messages extracted:', messages.length);
     return { ok: true, messages };
-  } catch(e) { return { ok: false, error: e.message }; }
+  } catch(e) {
+    console.log('[ICQ msg] error:', e.message);
+    return { ok: false, error: e.message };
+  }
 })()
 `;
 
@@ -333,8 +377,10 @@ ipcMain.on('wa-show', () => {
 ipcMain.on('wa-click-contact', async (e, index) => {
   if (!waWindow || waWindow.isDestroyed()) return;
   const i = index | 0;
+  stopMsgLoop();
   try {
-    const result = await waWindow.webContents.executeJavaScript(`
+    // Get the center coordinates of the cell (viewport-relative)
+    const rect = await waWindow.webContents.executeJavaScript(`
       (function(){
         const sels = [
           '[data-testid="cell-frame-container"]',
@@ -349,14 +395,36 @@ ipcMain.on('wa-click-contact', async (e, index) => {
           if (cells.length > 0) break;
         }
         const cell = cells[${i}];
-        if (!cell) return { ok: false, total: cells.length };
-        cell.click();
-        return { ok: true, total: cells.length, name: cell.textContent?.slice(0,30) };
+        if (!cell) return null;
+        const r = cell.getBoundingClientRect();
+        return {
+          x: Math.round(r.left + r.width / 2),
+          y: Math.round(r.top  + r.height / 2),
+          name: cell.textContent?.slice(0, 40) || '',
+          total: cells.length
+        };
       })()`);
-    console.log('[ICQ] wa-click-contact index:', i, 'result:', JSON.stringify(result));
-    // Stop any previous message loop, start fresh for new chat
-    stopMsgLoop();
-    setTimeout(startMsgLoop, 1000);
+
+    if (rect) {
+      console.log('[ICQ] clicking contact', i, rect.name, 'at', rect.x, rect.y, '(total:', rect.total + ')');
+      // Send REAL mouse events — more reliable than element.click() with React
+      waWindow.webContents.sendInputEvent({ type: 'mouseMove',  x: rect.x, y: rect.y });
+      waWindow.webContents.sendInputEvent({ type: 'mouseDown',  x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
+      waWindow.webContents.sendInputEvent({ type: 'mouseUp',    x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
+    } else {
+      console.warn('[ICQ] cell not found at index', i, '— falling back to JS click');
+      await waWindow.webContents.executeJavaScript(`
+        (function(){
+          const sels = ['[data-testid="cell-frame-container"]','[data-testid^="cell-frame"]',
+            '#side [role="listitem"]','[aria-label*="Chat list"] [role="listitem"]'];
+          let cells = [];
+          for (const s of sels) { cells = Array.from(document.querySelectorAll(s)); if (cells.length) break; }
+          if (cells[${i}]) cells[${i}].click();
+        })()`);
+    }
+
+    // Wait 2s for WA to open chat, then start scraping every 1.5s
+    setTimeout(startMsgLoop, 2000);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
 
