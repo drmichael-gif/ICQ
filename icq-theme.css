@@ -1,513 +1,539 @@
 /* ============================================================
-   ICQ EXACT MATCH — Win98/2000 grey chrome
-   Layout: Chat window LEFT, Contact list RIGHT
+   ICQ Classic — Win98/2000 exact match
+   Layout: Chat LEFT (~70%) | Contact List RIGHT (~270px)
    ============================================================ */
 
 :root {
-  /* Win98/2000 grey chrome (NOT XP blue) */
-  --win-bg: #C0C0C0;
-  --win-face: #C0C0C0;
+  --win-bg:    #C0C0C0;
   --win-light: #DFDFDF;
-  --win-dark: #808080;
-  --win-darkest: #000000;
-  --win-titlebar: linear-gradient(90deg, #000080 0%, #1084D0 100%);
-  --win-titlebar-inactive: linear-gradient(90deg, #808080 0%, #B0B0B0 100%);
-  --win-titlebar-text: #FFFFFF;
-
-  /* ICQ colors */
-  --icq-green: #3CC832;
-  --icq-green-alt: #50D846;
-  --icq-red: #E81919;
-  --icq-yellow: #FFD900;
-
-  /* Contact list */
-  --cl-bg: #FFFFFF;
-  --cl-online-name: #006600;
-  --cl-offline-name: #666666;
-  --cl-section-text: #808080;
-  --cl-hover: #D6EEDA;
-  --cl-selected: #000080;
-  --cl-selected-text: #FFFFFF;
-
-  /* Chat */
-  --chat-bg: #FFFFFF;
-  --chat-sender-blue: #0000CC;
-  --chat-sender-red: #CC0000;
-  --chat-text: #000000;
-  --chat-time: #808080;
-
-  --text: #000000;
-  --text-grey: #808080;
-  --font: 'Tahoma', 'MS Sans Serif', 'Arial', sans-serif;
-
-  /* Override ALL WA vars */
-  --panel-background: var(--win-bg) !important;
-  --panel-background-deeper: var(--win-bg) !important;
-  --background-default: var(--cl-bg) !important;
-  --background-default-hover: var(--cl-hover) !important;
-  --background-default-active: var(--cl-selected) !important;
-  --incoming-background: transparent !important;
-  --outgoing-background: transparent !important;
-  --conversation-panel-background: var(--chat-bg) !important;
-  --compose-input-background: #fff !important;
-  --app-background: var(--win-bg) !important;
-  --app-background-stripe: var(--win-bg) !important;
-  --intro-background: var(--win-bg) !important;
-  --search-input-background: #fff !important;
-  --primary: var(--icq-green) !important;
-  --chat-background: var(--chat-bg) !important;
-  --secondary-lighter: var(--win-bg) !important;
-  --bubble-meta: var(--chat-time) !important;
-  --unread-marker-background: #FF0000 !important;
-  --rich-text-panel-background: var(--win-bg) !important;
-  --drawer-background: var(--win-bg) !important;
-  --filters-container-background: var(--win-bg) !important;
+  --win-dark:  #808080;
+  --win-black: #000000;
+  --win-titlebar:          linear-gradient(90deg,#000080 0%,#1084D0 100%);
+  --win-titlebar-inactive: linear-gradient(90deg,#808080 0%,#B0B0B0 100%);
+  --cl-bg:        #FFFFFF;
+  --cl-online:    #006600;
+  --cl-offline:   #666666;
+  --cl-hover:     #D6EEDA;
+  --cl-sel-bg:    #000080;
+  --cl-sel-text:  #FFFFFF;
+  --chat-bg:      #FFFFFF;
+  --chat-blue:    #0000CC;
+  --chat-red:     #CC0000;
+  --chat-gray:    #808080;
+  --font: 'Tahoma','MS Sans Serif','Arial',sans-serif;
 }
 
-/* Force LIGHT mode override — kill WhatsApp dark theme */
-[data-theme="dark"], body.dark, html.dark,
-body[class*="dark"], html[class*="dark"] {
+/* ── GLOBAL RESET ── */
+*, *::before, *::after {
+  font-family: var(--font) !important;
   color-scheme: light !important;
+  box-sizing: border-box !important;
 }
-
-/* ==================== GLOBAL ==================== */
-* { font-family: var(--font) !important; color-scheme: light !important; }
 html, body {
   background: var(--win-bg) !important;
   font-size: 12px !important;
-  margin: 0 !important; padding: 0 !important; overflow: hidden !important;
+  margin: 0 !important; padding: 0 !important;
+  overflow: hidden !important;
   color: #000 !important;
   color-scheme: light !important;
 }
 
-/* ==================== DRAG BAR ==================== */
+/* ── KILL DARK MODE globally ── */
+[data-theme], [data-theme="dark"], [data-theme="light"],
+html[data-theme], body[data-theme] {
+  color-scheme: light !important;
+  --background-default: #fff !important;
+  --panel-background: #C0C0C0 !important;
+  --panel-background-deeper: #C0C0C0 !important;
+  --conversation-panel-background: #fff !important;
+  --app-background: #C0C0C0 !important;
+  --compose-input-background: #fff !important;
+  --chat-background: #fff !important;
+  --incoming-background: transparent !important;
+  --outgoing-background: transparent !important;
+  --primary: #3CC832 !important;
+  --system-message-background: #C0C0C0 !important;
+  --panel-header-background: #C0C0C0 !important;
+  --icon: #333 !important;
+  --icon-lighter: #666 !important;
+  --input-placeholder: #999 !important;
+  --panel-input-background: #fff !important;
+  --border-default: #808080 !important;
+  --border-list: #ccc !important;
+  --unread-marker-background: #FF0000 !important;
+  --background-default-hover: #D6EEDA !important;
+  --background-default-active: #000080 !important;
+  --rich-text-panel-background: #C0C0C0 !important;
+  --drawer-background: #C0C0C0 !important;
+  --dropdown-background: #fff !important;
+  --compose-panel-background: #C0C0C0 !important;
+  --rich-text-input-background: #fff !important;
+  --search-input-background: #fff !important;
+}
+
+/* Force text black everywhere except our overrides */
+span, p, div, h1, h2, h3, h4, h5, h6, a, label, button,
+input, textarea, li, td, th { color: #000 !important; }
+.icq-titlebar * { color: #fff !important; }
+a, a:visited { color: #0066CC !important; text-decoration: underline !important; }
+
+/* Kill dark inline backgrounds */
+div[style*="background-color: rgb(11"],
+div[style*="background-color: rgb(17"],
+div[style*="background-color: rgb(30"],
+div[style*="background-color: rgb(32"],
+div[style*="background-color: rgb(42"] {
+  background-color: var(--win-bg) !important;
+  background: var(--win-bg) !important;
+}
+
+/* ── DRAG BAR ── */
 .icq-drag-bar {
   -webkit-app-region: drag;
   position: fixed; top: 0; left: 0; right: 0;
-  height: 4px; z-index: 999999;
+  height: 4px; z-index: 999999; pointer-events: none;
 }
 
-/* ==================== APP LAYOUT ==================== */
+/* ── HIDE WhatsApp native nav/sidebar ── */
+/* New left icon nav bar (Chats/Status/Channels/Communities tabs) */
+#app > div > div > div:not(#pane-side):not(#side):not(#main):not([data-testid="two-panel-layout-side"]):not([data-testid="chat"]),
+nav[aria-label],
+[data-testid="side-menu"],
+[data-testid="chatlist-header"],
+#app > div > div > nav,
+#app > div > div > aside,
+#app nav,
+#app aside,
+div[role="navigation"],
+[class*="nav-bar"],
+[class*="navbar"],
+/* WA top header (says "WhatsApp") */
+#side > header,
+#side > div > header,
+/* WA filter pills (All / Unread / Favorites) */
+[data-testid="chat-list-filter"],
+[data-testid="archive-button"],
+[class*="filters-container"],
+button[data-testid*="filter"],
+/* Channels tab + community banners */
+[data-testid="channel-list"],
+[data-testid="newsletter-list"] {
+  display: none !important;
+  width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+  height: 0 !important; overflow: hidden !important;
+  flex: 0 0 0px !important; padding: 0 !important; margin: 0 !important;
+}
+
+/* ── APP ROOT LAYOUT ── */
 #app {
   background: var(--win-bg) !important;
-  padding: 0 !important;
-  box-sizing: border-box !important;
   height: 100vh !important; display: flex !important;
+  flex-direction: column !important;
 }
 #app > div {
-  background: var(--win-bg) !important;
-  display: flex !important; width: 100% !important;
+  flex: 1 !important; display: flex !important;
+  background: var(--win-bg) !important; overflow: hidden !important;
 }
-#app > div > div {
-  background: var(--win-bg) !important;
-  display: flex !important; width: 100% !important;
-  border: none !important; gap: 0 !important;
-  /* REVERSE: Chat LEFT, Contact list RIGHT */
+/* The pane wrapper — reverse so CL on right, chat on left */
+#app > div > div,
+#app > div > [data-testid="two-panel-layout-side"],
+.two-panel-layout,
+[class*="two-panel"] {
+  flex: 1 !important; display: flex !important;
   flex-direction: row-reverse !important;
-}
-
-/* ==================== HIDE WA NAV (left sidebar with icons) ==================== */
-nav, [data-testid="side-menu"], div[role="navigation"],
-#app > div > div > div:first-child:not(#side):not(#main),
-[data-testid="chatlist-header"],
-[class*="side-menu"], [class*="nav-sidebar"],
-/* WhatsApp vertical nav bar */
-#app > div > div > span[data-testid],
-#app nav, aside {
-  display: none !important; width: 0 !important; min-width: 0 !important;
-  max-width: 0 !important; overflow: hidden !important; flex: 0 0 0px !important;
-  padding: 0 !important; margin: 0 !important; border: none !important;
-}
-/* Also hide the header row above chat list that says "WhatsApp" */
-#side > header, #side > [data-testid="chatlist-header"] {
-  display: none !important;
-}
-
-/* ==================== RIGHT: CONTACT LIST ==================== */
-#side {
   background: var(--win-bg) !important;
-  border: none !important; border-radius: 0 !important;
-  flex: 0 0 220px !important; max-width: 220px !important; min-width: 200px !important;
+  gap: 0 !important; overflow: hidden !important;
+}
+
+/* ── RIGHT: CONTACT LIST (#side) ── */
+#side,
+#pane-side,
+[data-testid="two-panel-layout-side"] > div:first-child {
+  background: var(--win-bg) !important;
+  flex: 0 0 265px !important;
+  min-width: 230px !important; max-width: 280px !important;
   display: flex !important; flex-direction: column !important;
   overflow: hidden !important;
   border-left: 2px solid var(--win-dark) !important;
   order: -1 !important;
 }
 
-/* ==================== LEFT: CHAT WINDOW ==================== */
+/* ── LEFT: CHAT WINDOW (#main) ── */
 #main {
   background: var(--win-bg) !important;
-  border: none !important; border-radius: 0 !important;
-  flex: 1 !important; display: flex !important; flex-direction: column !important;
+  flex: 1 !important; min-width: 0 !important;
+  display: flex !important; flex-direction: column !important;
   overflow: hidden !important;
 }
-/* Placeholder panel */
-#side ~ div:not(#main) {
-  background: var(--win-bg) !important; flex: 1 !important;
+
+/* ── HIDE WA header inside chat ── */
+#main header,
+[data-testid="conversation-header"] {
+  display: none !important;
 }
 
-/* ==================== WIN98 TITLE BARS ==================== */
+/* ── WIN98 TITLE BAR ── */
 .icq-titlebar {
   height: 22px;
   background: var(--win-titlebar);
   display: flex; align-items: center; padding: 0 3px;
   flex-shrink: 0; user-select: none;
-  -webkit-app-region: drag;
+  -webkit-app-region: drag; cursor: default;
 }
 .icq-titlebar.inactive { background: var(--win-titlebar-inactive); }
-.icq-titlebar-icon { width: 14px; height: 14px; flex-shrink: 0; margin: 0 3px; }
+.icq-titlebar-icon { width: 14px; height: 14px; flex-shrink: 0; margin: 0 3px 0 1px; }
 .icq-titlebar-text {
-  color: var(--win-titlebar-text); font-size: 11px; font-weight: bold;
-  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1; color: #fff !important; font-size: 11px; font-weight: bold;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.icq-titlebar-btns { display: flex; gap: 1px; -webkit-app-region: no-drag; margin-left: auto; }
+.icq-titlebar-btns { display: flex; gap: 1px; -webkit-app-region: no-drag; margin-left: 4px; }
 .icq-win-btn {
-  width: 16px; height: 14px; background: var(--win-bg);
-  border: 1px outset; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+  width: 16px; height: 14px;
+  background: var(--win-bg);
+  border: 1px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; font-size: 8px; font-weight: bold; color: #000; line-height: 1;
+  cursor: pointer; font-size: 8px; font-weight: bold; color: #000 !important; line-height: 1;
 }
-.icq-win-btn:active { border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark); }
+.icq-win-btn:active {
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+}
 
-/* ==================== ICQ HEADER (below titlebar in contact list) ==================== */
+/* ── ICQ CL HEADER ROW (below title bar) ── */
 .icq-cl-header {
   height: 28px; display: flex; align-items: center;
-  padding: 0 4px; gap: 2px;
+  padding: 0 3px; gap: 2px;
   background: var(--win-bg);
   border-bottom: 1px solid var(--win-dark);
   flex-shrink: 0;
 }
 .icq-cl-header-btn {
-  width: 24px; height: 22px; display: flex; align-items: center; justify-content: center;
-  border: 1px outset; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
-  background: var(--win-bg); cursor: pointer;
+  width: 26px; height: 22px;
+  background: var(--win-bg);
+  border: 1px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 10px; font-weight: bold;
 }
-.icq-cl-header-btn:active { border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark); }
+.icq-cl-header-btn:active {
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+}
 
-/* ==================== ONLINE/OFFLINE DIVIDERS ==================== */
+/* ── CONTACT LIST SCROLL AREA ── */
+[data-testid="chat-list"] {
+  background: var(--cl-bg) !important;
+  border: 2px solid !important;
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
+  margin: 2px 3px !important;
+  flex: 1 !important;
+  overflow-y: auto !important; overflow-x: hidden !important;
+}
+
+/* ── CONTACT ITEMS ── */
+/* Hide avatar, last message preview, timestamp, everything but the name */
+[data-testid="cell-frame-container"] > div > div:first-child,
+[data-testid="cell-frame-container"] [data-testid="user-avatar"],
+[data-testid="cell-frame-container"] [data-testid="group-avatar"],
+[data-testid="cell-frame-container"] img,
+[data-testid="cell-frame-container"] [data-testid="last-msg-status"],
+[data-testid="cell-frame-container"] [data-testid="msg-dblcheck"],
+[data-testid="cell-frame-container"] [data-testid="msg-check"],
+[data-testid="cell-frame-container"] [data-icon*="check"],
+[data-testid="cell-frame-container"] [class*="status"],
+[data-testid="cell-frame-container"] > div > div:last-child > div:last-child,
+#side [data-testid="user-avatar"],
+#side [data-testid="group-avatar"],
+#side img[src*="whatsapp"] {
+  display: none !important; width: 0 !important; height: 0 !important;
+}
+
+/* The cell itself */
+[data-testid="cell-frame-container"] {
+  background: var(--cl-bg) !important;
+  border-bottom: none !important;
+  padding: 1px 4px !important;
+  min-height: 0 !important; height: auto !important;
+  cursor: pointer !important;
+  transition: none !important;
+}
+[data-testid="cell-frame-container"]:hover { background: var(--cl-hover) !important; }
+[data-testid="cell-frame-container"][aria-selected="true"],
+[data-testid="cell-frame-container"]:focus { background: var(--cl-sel-bg) !important; }
+[data-testid="cell-frame-container"][aria-selected="true"] * { color: var(--cl-sel-text) !important; }
+
+/* Inner div padding reset */
+[data-testid="cell-frame-container"] > div {
+  padding: 1px 0 !important; min-height: 0 !important; gap: 0 !important;
+}
+
+/* Contact name — green when online */
+[data-testid="cell-frame-container"] span[dir="auto"]:first-of-type {
+  color: var(--cl-online) !important;
+  font-weight: bold !important;
+  font-size: 12px !important;
+  display: inline !important;
+}
+
+/* Hide last-message preview text + time */
+[data-testid="cell-frame-container"] span[dir="auto"]:not(:first-of-type),
+[data-testid="cell-frame-container"] [data-testid*="msg"],
+[data-testid="cell-frame-container"] [class*="last"],
+[data-testid="cell-frame-container"] [class*="time"],
+[data-testid="cell-frame-container"] span[class*="preview"],
+[data-testid="cell-frame-container"] div[class*="last-msg"] {
+  display: none !important;
+}
+
+/* Unread badge */
+[data-testid="icon-unread-count"], span[aria-label*="unread"] {
+  background: #FF0000 !important; color: #fff !important;
+  border-radius: 0 !important; font-weight: bold !important;
+  font-size: 9px !important; padding: 0 3px !important;
+  border: none !important; box-shadow: none !important;
+}
+
+/* ── SECTION DIVIDERS (Online/Offline) ── */
 .icq-divider {
-  display: flex; align-items: center; padding: 3px 8px 1px; gap: 6px;
-  font-size: 11px; color: var(--cl-section-text); user-select: none;
+  display: flex; align-items: center;
+  padding: 3px 8px 1px; gap: 6px;
+  font-size: 11px; color: var(--win-dark) !important;
+  background: var(--cl-bg); user-select: none;
 }
 .icq-divider::before, .icq-divider::after {
   content: ''; flex: 1; height: 1px; background: var(--win-dark);
 }
 
-/* ==================== CONTACT LIST ==================== */
-[data-testid="chat-list"] {
-  background: var(--cl-bg) !important;
-  border: 2px inset !important; border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
-  margin: 2px !important; flex: 1 !important;
-}
-/* Hide WA filters */
-[data-testid="chat-list-filter"], button[data-testid*="filter"], [class*="filters-container"] { display: none !important; }
-
-/* ----- CONTACT ITEMS: JUST flower + bold green name ----- */
-[data-testid="cell-frame-container"] {
-  background: var(--cl-bg) !important; border-bottom: none !important;
-  padding: 0 4px !important; transition: none !important;
-  min-height: 0 !important; height: auto !important; cursor: pointer !important;
-}
-[data-testid="cell-frame-container"]:hover { background: var(--cl-hover) !important; }
-[data-testid="cell-frame-container"][aria-selected="true"] { background: var(--cl-selected) !important; }
-[data-testid="cell-frame-container"][aria-selected="true"] span,
-[data-testid="cell-frame-container"][aria-selected="true"] * { color: var(--cl-selected-text) !important; }
-
-/* Contact name: bold green */
-[data-testid="cell-frame-container"] span[dir="auto"]:first-of-type {
-  color: var(--cl-online-name) !important; font-weight: bold !important; font-size: 12px !important;
-}
-
-/* === HIDE EVERYTHING EXCEPT NAME === */
-[data-testid="cell-frame-container"] [data-testid="user-avatar"],
-[data-testid="cell-frame-container"] [data-testid="group-avatar"],
-[data-testid="cell-frame-container"] img[draggable="false"],
-[data-testid="cell-frame-container"] span[data-icon="default-user"],
-[data-testid="cell-frame-container"] span[data-icon="default-group"],
-#side [data-testid="user-avatar"], #side [data-testid="group-avatar"],
-#side img[src*="pps.whatsapp.net"] { display: none !important; width: 0 !important; height: 0 !important; }
-[data-testid="cell-frame-container"] > div > div:first-child { display: none !important; }
-[data-testid="cell-frame-container"] [data-testid="last-msg-status"],
-[data-testid="cell-frame-container"] span[class*="matched-text"],
-[data-testid="cell-frame-container"] [class*="last-msg"],
-[data-testid="cell-frame-container"] > div > div:last-child > div:last-child,
-[data-testid="cell-frame-container"] [class*="time"],
-[data-testid="cell-frame-container"] [data-testid="status-time"],
-[data-testid="cell-frame-container"] [data-testid="msg-dblcheck"],
-[data-testid="cell-frame-container"] [data-testid="msg-check"],
-[data-testid="cell-frame-container"] [data-icon="msg-dblcheck"],
-[data-testid="cell-frame-container"] [data-icon="msg-check"],
-[data-testid="cell-frame-container"] [data-icon="msg-time"] { display: none !important; }
-[data-testid="cell-frame-container"] > div { padding: 0 !important; min-height: 0 !important; gap: 0 !important; }
-span[data-icon="default-user"], span[data-icon="default-group"] { display: none !important; }
-/* Unread badge */
-[data-testid="icon-unread-count"], span[aria-label*="unread"] {
-  background: #FF0000 !important; color: #fff !important; border-radius: 0 !important;
-  font-weight: bold !important; font-size: 8px !important; padding: 0 2px !important;
-  border: none !important; box-shadow: none !important;
-}
-
-/* ==================== BOTTOM BUTTONS (Contact List) ==================== */
+/* ── CL BOTTOM BUTTONS ── */
 .icq-cl-bottom {
   display: flex; flex-direction: column; gap: 1px;
-  padding: 2px; background: var(--win-bg); flex-shrink: 0;
-  border-top: 1px solid var(--win-light);
+  padding: 2px 3px 3px; background: var(--win-bg);
+  border-top: 1px solid var(--win-light); flex-shrink: 0;
 }
 .icq-cl-btn {
   display: flex; align-items: center; gap: 4px;
   padding: 2px 6px; font-size: 11px; font-weight: bold;
-  color: var(--text); cursor: pointer; background: var(--win-bg);
-  border: 1px outset; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+  color: #000 !important; cursor: pointer;
+  background: var(--win-bg);
+  border: 1px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
   font-family: var(--font) !important;
 }
-.icq-cl-btn:active { border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark); }
+.icq-cl-btn:active {
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+}
 .icq-cl-avail {
   display: flex; align-items: center; gap: 4px;
   padding: 2px 6px; font-size: 11px; font-weight: bold;
-  background: var(--win-bg);
-  border: 1px outset; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+  color: #000 !important; background: var(--win-bg);
+  border: 1px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
 }
 
-/* ==================== SEARCH ==================== */
-[data-testid="chat-list-search"], [data-testid="search-container"] {
+/* ── SEARCH BAR ── */
+[data-testid="chat-list-search"],
+[data-testid="search-container"] {
   background: var(--win-bg) !important; padding: 2px !important;
 }
 [data-testid="chat-list-search"] [contenteditable],
 [data-testid="chat-list-search"] input,
 [data-testid="search-container"] input {
   background: #fff !important;
-  border: 2px inset !important; border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
-  border-radius: 0 !important; font-size: 11px !important; padding: 1px 3px !important; box-shadow: none !important;
+  border: 2px solid !important;
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
+  border-radius: 0 !important; font-size: 11px !important;
+  padding: 1px 4px !important; box-shadow: none !important;
 }
 
-/* ==================== CHAT HEADER — HIDE WA's ==================== */
-[data-testid="conversation-header"] { display: none !important; }
-header { background: var(--win-bg) !important; border-bottom: 1px solid var(--win-dark) !important; box-shadow: none !important; min-height: 0 !important; }
-header * { color: var(--text) !important; }
-
-/* ==================== USER DETAILS FIELDSET ==================== */
+/* ── USER DETAILS FIELDSET (chat window) ── */
 .icq-user-details {
-  margin: 4px 6px 2px; padding: 2px 8px 4px;
-  border: 1px solid var(--win-dark); background: var(--win-bg);
-  flex-shrink: 0;
+  margin: 3px 6px 2px; padding: 2px 8px 4px;
+  border: 1px solid var(--win-dark);
+  background: var(--win-bg); flex-shrink: 0;
 }
-.icq-ud-legend { font-size: 11px; font-weight: normal; color: var(--text); padding: 0 3px; }
+.icq-ud-legend {
+  font-size: 11px; font-weight: normal;
+  color: #000 !important; padding: 0 3px;
+}
 .icq-ud-row {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11px; color: var(--text);
+  display: flex; align-items: center;
+  flex-wrap: wrap; gap: 4px 8px;
+  font-size: 11px; color: #000 !important;
 }
-.icq-ud-label { font-weight: bold; }
-.icq-ud-value { font-weight: normal; }
+.icq-ud-label { font-weight: bold; color: #000 !important; }
+.icq-ud-value { font-weight: normal; color: #000 !important; }
 
-/* ==================== CHAT MESSAGE AREA ==================== */
-[data-testid="conversation-panel-wrapper"], [data-asset-chat-background] {
-  background: var(--chat-bg) !important; background-image: none !important;
+/* ── CHAT MESSAGE AREA ── */
+[data-testid="conversation-panel-wrapper"],
+[data-asset-chat-background],
+[data-testid="conversation-panel-body"] {
+  background: var(--chat-bg) !important;
+  background-image: none !important;
 }
-[data-testid="chat-background"], [class*="bg-chat"] {
-  background-image: none !important; background-color: var(--chat-bg) !important; opacity: 1 !important;
+[data-testid="chat-background"],
+[class*="bg-chat"],
+[data-testid="msg-container"] {
+  background-color: var(--chat-bg) !important;
+  background-image: none !important;
+  opacity: 1 !important;
 }
-[data-testid="conversation-panel-body"], .copyable-area {
-  border: 2px inset !important; border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
-  margin: 2px 6px !important; background: var(--chat-bg) !important;
+[data-testid="conversation-panel-body"],
+.copyable-area {
+  border: 2px solid !important;
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
+  margin: 0 6px !important;
+  background: var(--chat-bg) !important;
+  flex: 1 !important; overflow-y: auto !important;
 }
 
-/* ==================== MESSAGES — ICQ LOG FORMAT ==================== */
-.message-out, .message-in, div[class*="message-out"], div[class*="message-in"] {
-  background: transparent !important; border: none !important;
-  border-radius: 0 !important; box-shadow: none !important;
-  margin: 0 4px !important; padding: 1px 2px !important; max-width: 100% !important;
+/* ── MESSAGES — ICQ LOG STYLE ── */
+.message-out, .message-in,
+div[class*="message-out"], div[class*="message-in"] {
+  background: transparent !important;
+  border: none !important; border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 4px !important; padding: 1px 2px !important;
+  max-width: 100% !important; width: auto !important;
 }
-.message-out, .message-in { margin-left: 4px !important; margin-right: auto !important; }
 [data-testid="tail-in"], [data-testid="tail-out"],
 span[data-icon="tail-in"], span[data-icon="tail-out"] { display: none !important; }
 
-.message-out .copyable-text, .message-out [data-testid="balloon-text"],
-.message-out span.selectable-text { color: var(--chat-text) !important; font-size: 12px !important; }
-.message-in .copyable-text, .message-in [data-testid="balloon-text"],
-.message-in span.selectable-text { color: var(--chat-text) !important; font-size: 12px !important; }
-[data-testid="msg-meta"] { color: var(--chat-time) !important; font-size: 10px !important; }
-
-/* ==================== MESSAGE INPUT ==================== */
-footer, [data-testid="conversation-compose-box-input"] {
-  background: var(--win-bg) !important; border-top: none !important; padding: 0 !important;
+.message-out .copyable-text,
+.message-out [data-testid="balloon-text"],
+.message-out span.selectable-text,
+.message-in .copyable-text,
+.message-in [data-testid="balloon-text"],
+.message-in span.selectable-text {
+  color: #000 !important; font-size: 12px !important;
 }
-[role="textbox"][contenteditable="true"], footer [contenteditable="true"] {
+/* Message prefix injected by JS */
+.icq-pf { font-size: 12px !important; font-weight: bold !important; }
+.icq-pf-out { color: var(--chat-blue) !important; }
+.icq-pf-in  { color: var(--chat-red) !important; }
+
+[data-testid="msg-meta"] {
+  color: var(--chat-gray) !important; font-size: 10px !important;
+}
+[data-testid="msg-day-separator"] span {
+  background: var(--win-bg) !important;
+  border: 1px solid var(--win-dark) !important;
+  border-radius: 0 !important; padding: 0 8px !important;
+  font-size: 10px !important;
+}
+
+/* ── MESSAGE INPUT ── */
+footer,
+[data-testid="conversation-compose-box-input"] {
+  background: var(--win-bg) !important;
+  border-top: none !important; padding: 0 !important;
+}
+[role="textbox"][contenteditable="true"],
+footer [contenteditable="true"] {
   background: #fff !important;
-  border: 2px inset !important; border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
-  border-radius: 0 !important; color: var(--text) !important;
-  font-size: 12px !important; padding: 3px 4px !important;
+  border: 2px solid !important;
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark) !important;
+  border-radius: 0 !important;
+  color: #000 !important; font-size: 12px !important;
+  padding: 3px 4px !important;
   min-height: 60px !important; box-shadow: none !important;
   margin: 2px 6px !important;
 }
 [role="textbox"][contenteditable="true"]:focus { outline: none !important; }
-footer button, footer [data-testid] { color: var(--text-grey) !important; }
+footer button, footer [data-testid] { color: var(--win-dark) !important; }
+/* Hide WA attach / record / camera from footer (we have our own bar) */
+footer [data-testid="attach-menu-plus"],
+footer [data-testid="ptt-btn"],
+footer [data-testid="media-button"],
+footer button[aria-label="Attach"],
+footer button[aria-label="Record"],
+footer [data-icon="attach-menu-plus"],
+footer [data-icon="ptt"],
+footer [data-icon="camera"] { display: none !important; }
 
-/* ==================== SEND BAR ==================== */
+/* ── SEND BAR ── */
 .icq-send-bar {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 5px;
   padding: 3px 6px; background: var(--win-bg); flex-shrink: 0;
+  border-top: 1px solid var(--win-light);
 }
 .icq-send-icons { display: flex; gap: 2px; }
 .icq-send-icon-btn {
-  width: 22px; height: 20px; background: var(--win-bg);
-  border: 1px outset; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-  font-size: 10px;
+  width: 24px; height: 22px;
+  background: var(--win-bg);
+  border: 1px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 11px;
 }
-.icq-send-label { font-size: 9px; color: var(--text-grey); white-space: nowrap; }
+.icq-send-icon-btn:active {
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+}
+.icq-send-label { font-size: 9px; color: var(--chat-gray) !important; white-space: nowrap; }
 .icq-send-progress {
   width: 80px; height: 12px; background: #fff;
-  border: 1px inset; border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+  border: 1px solid; border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
   flex-shrink: 0;
 }
 .icq-send-progress-fill { height: 100%; background: #FFFF00; width: 0%; }
-.icq-send-count { font-size: 11px; font-weight: bold; color: var(--text); white-space: nowrap; }
+.icq-send-count { font-size: 11px; font-weight: bold; color: #000 !important; white-space: nowrap; }
 .icq-send-btn {
   padding: 2px 14px; font-size: 11px; font-weight: bold;
   background: var(--win-bg); cursor: pointer; margin-left: auto;
-  border: 2px outset; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
-  font-family: var(--font) !important; color: var(--text);
+  border: 2px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+  font-family: var(--font) !important; color: #000 !important;
 }
-.icq-send-btn:active { border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark); }
+.icq-send-btn:active {
+  border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+}
 
-/* ==================== WELCOME ==================== */
+/* ── WELCOME / INTRO SCREEN ── */
+.icq-wc {
+  flex: 1; background: var(--win-bg) !important;
+  display: flex; align-items: center; justify-content: center;
+}
 .icq-welcome {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; flex: 1; background: var(--win-bg); gap: 8px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px;
 }
 .icq-welcome-flower { width: 80px; height: 80px; }
-.icq-welcome h2 { font-size: 20px; font-weight: bold; color: var(--text); margin: 0; }
-.icq-welcome p { font-size: 12px; color: var(--text-grey); margin: 0; }
+.icq-welcome h2 { font-size: 20px; font-weight: bold; color: #000 !important; margin: 0; }
+.icq-welcome p  { font-size: 12px; color: var(--chat-gray) !important; margin: 0; }
+/* Hide WA's native intro content */
+[data-testid="intro-md-beta-logo-dark"],
+[data-testid="intro-md-beta-logo-light"],
+[data-testid="startup"], [data-testid="intro-image"],
+[data-icon="wa-logo"] { display: none !important; }
 
-/* ==================== SCROLLBARS (Win98) ==================== */
+/* ── WIN98 SCROLLBARS ── */
 ::-webkit-scrollbar { width: 16px !important; height: 16px !important; }
 ::-webkit-scrollbar-track { background: #C0C0C0 !important; }
 ::-webkit-scrollbar-thumb {
   background: var(--win-bg) !important;
-  border: 1px outset !important; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light) !important;
+  border: 1px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light) !important;
   border-radius: 0 !important;
 }
 ::-webkit-scrollbar-button {
   display: block !important; height: 16px !important; width: 16px !important;
   background: var(--win-bg) !important;
-  border: 1px outset !important; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light) !important;
+  border: 1px solid; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light) !important;
 }
 
-/* ==================== POPUPS ==================== */
+/* ── POPUPS / MENUS ── */
 [data-testid="popup"], [role="dialog"] {
-  background: var(--win-bg) !important; border: 2px outset !important;
+  background: var(--win-bg) !important;
+  border: 2px solid !important;
   border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light) !important;
   border-radius: 0 !important;
 }
 [data-testid="popup"] button, [role="dialog"] button {
   background: var(--win-bg) !important;
-  border: 2px outset !important; border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light) !important;
-  border-radius: 0 !important; font-size: 11px !important; padding: 1px 12px !important;
-  color: var(--text) !important; cursor: pointer !important;
+  border: 2px solid !important;
+  border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light) !important;
+  border-radius: 0 !important; font-size: 11px !important;
+  padding: 2px 14px !important; color: #000 !important; cursor: pointer !important;
 }
 ul[role="listbox"], [data-testid="menu-bar-menu"] {
-  background: #fff !important; border: 1px solid var(--win-dark) !important; border-radius: 0 !important;
+  background: #fff !important;
+  border: 1px solid var(--win-dark) !important; border-radius: 0 !important;
 }
-ul[role="listbox"] li:hover { background: var(--cl-selected) !important; color: #fff !important; }
-
-/* Date sep */
-[data-testid="msg-day-separator"] span {
-  background: var(--win-bg) !important; border: 1px solid var(--win-dark) !important;
-  border-radius: 0 !important; padding: 0 8px !important; font-size: 10px !important;
+ul[role="listbox"] li:hover {
+  background: var(--cl-sel-bg) !important; color: #fff !important;
 }
-
-/* Hide WA branding */
-[data-testid="intro-md-beta-logo-dark"], [data-testid="intro-md-beta-logo-light"],
-[data-icon="wa-logo"], [data-testid="intro-image"] { display: none !important; }
-[data-testid="emoji-panel"] { background: var(--win-bg) !important; border: 1px solid var(--win-dark) !important; border-radius: 0 !important; }
-a, a:visited { color: #0066CC !important; text-decoration: underline !important; }
-[data-testid="notification-banner"] { background: #FFFDE0 !important; border: 1px solid var(--win-dark) !important; border-radius: 0 !important; }
-[data-testid="contact-info"] { background: var(--win-bg) !important; }
-[data-testid="startup"] { background: var(--win-bg) !important; }
-
-/* ==================== FORCE KILL DARK MODE ==================== */
-/* WhatsApp dark mode sets tons of CSS variables — override ALL of them */
-body, [data-theme], [data-theme="dark"], [data-theme="light"],
-#app, #app > div, #app > div > div, #side, #main,
-[data-testid="chat-list"], [data-testid="cell-frame-container"],
-header, footer, nav {
-  --panel-background: var(--win-bg) !important;
-  --panel-background-deeper: var(--win-bg) !important;
-  --background-default: var(--cl-bg) !important;
-  --background-default-hover: var(--cl-hover) !important;
-  --background-default-active: var(--cl-selected) !important;
-  --incoming-background: transparent !important;
-  --outgoing-background: transparent !important;
-  --conversation-panel-background: var(--chat-bg) !important;
-  --compose-input-background: #fff !important;
-  --app-background: var(--win-bg) !important;
-  --app-background-stripe: var(--win-bg) !important;
-  --intro-background: var(--win-bg) !important;
-  --search-input-background: #fff !important;
-  --primary: var(--icq-green) !important;
-  --chat-background: var(--chat-bg) !important;
-  --secondary-lighter: var(--win-bg) !important;
-  --bubble-meta: var(--chat-time) !important;
-  --unread-marker-background: #FF0000 !important;
-  --rich-text-panel-background: var(--win-bg) !important;
-  --drawer-background: var(--win-bg) !important;
-  --filters-container-background: var(--win-bg) !important;
-  --primary-strong: #000 !important;
-  --secondary: #666 !important;
-  --secondary-stronger: #333 !important;
-  --panel-header-background: var(--win-bg) !important;
-  --panel-header-icon: #333 !important;
-  --icon: #333 !important;
-  --icon-lighter: #666 !important;
-  --icon-fixed: #333 !important;
-  --input-placeholder: #999 !important;
-  --panel-input-background: #fff !important;
-  --panel-input-border: var(--win-dark) !important;
-  --system-message-background: var(--win-bg) !important;
-  --startup-background: var(--win-bg) !important;
-  --dropdown-background: #fff !important;
-  --dropdown-background-hover: var(--cl-hover) !important;
-  --border-stronger: var(--win-dark) !important;
-  --border-default: var(--win-dark) !important;
-  --border-list: #ccc !important;
-  --media-viewer-background: #000 !important;
-  --bubble-meta-icon: var(--chat-time) !important;
-  --link: #0066CC !important;
-  --compose-panel-background: var(--win-bg) !important;
-  --rich-text-input-background: #fff !important;
-  --typing-indicator-background: var(--win-bg) !important;
-  --unread-timestamp: #FF0000 !important;
-  --round-icon-background: var(--win-bg) !important;
-  --status-primary: var(--icq-green) !important;
-  --teal-lighter: var(--icq-green) !important;
-  --panel-background-colored: var(--win-bg) !important;
-  --panel-background-colored-deeper: var(--win-bg) !important;
-  --avatar-placeholder-background: #ccc !important;
-  --forwarded-bubble: transparent !important;
-  --chat-marker-text: #333 !important;
-  color: #000 !important;
-}
-
-/* Kill any remaining dark backgrounds */
-div[style*="background-color: rgb(11"], div[style*="background-color: rgb(17"],
-div[style*="background-color: rgb(30"], div[style*="background-color: rgb(32"],
-div[style*="background-color: rgb(42"], div[style*="background-color: #111"],
-div[style*="background-color: #1f"], div[style*="background-color: #0b"],
-div[style*="background-color: #0d"], div[style*="background: rgb(11"],
-div[style*="background: rgb(17"], div[style*="background: rgb(30"] {
-  background-color: var(--win-bg) !important;
+[data-testid="emoji-panel"] {
   background: var(--win-bg) !important;
+  border: 1px solid var(--win-dark) !important; border-radius: 0 !important;
 }
-
-/* Force white/grey on all text */
-span, p, div, h1, h2, h3, h4, h5, h6, a, label, button, input, textarea {
-  color: #000 !important;
-}
-/* Except our title bar text */
-.icq-titlebar *, .icq-titlebar-text { color: #fff !important; }
-[data-testid="cell-frame-container"] span[dir="auto"]:first-of-type {
-  color: var(--cl-online-name) !important;
-}
-.icq-pf { color: inherit !important; }
-[data-testid="msg-meta"] { color: var(--chat-time) !important; }
-a, a:visited { color: #0066CC !important; }
