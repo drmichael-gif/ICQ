@@ -188,6 +188,18 @@ function createWaWindow() {
   waWindow.webContents.setUserAgent(WA_UA);
   waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
 
+  // Force a real viewport + disable throttling so virtual scroll renders items
+  waWindow.webContents.setBackgroundThrottling(false);
+  waWindow.setSize(1280, 900);
+  waWindow.webContents.enableDeviceEmulation({
+    screenPosition:   'desktop',
+    screenSize:       { width: 1280, height: 900 },
+    viewPosition:     { x: 0, y: 0 },
+    deviceScaleFactor: 1,
+    viewSize:         { width: 1280, height: 900 },
+    fitToView:        false,
+  });
+
   // Log any load errors
   waWindow.webContents.on('did-fail-load', (e, code, desc, url) => {
     console.error('[ICQ] WA load failed:', code, desc, url);
@@ -199,7 +211,23 @@ function createWaWindow() {
 
   // Start data loop 5s after WA finishes loading (give React time to mount)
   const startAfterLoad = () => {
-    console.log('[ICQ] WA page loaded — starting scrape in 5s');
+    console.log('[ICQ] WA page loaded — forcing viewport + starting scrape in 5s');
+    // Nudge the virtual scroll list to render items
+    setTimeout(() => {
+      waWindow.webContents.executeJavaScript(`
+        (function(){
+          window.dispatchEvent(new Event('resize'));
+          ['[data-testid="chat-list"]','#side','[aria-label*="Chat list"]']
+            .map(s => document.querySelector(s)).filter(Boolean)
+            .forEach(el => {
+              el.scrollTop = 1;
+              el.dispatchEvent(new Event('scroll', {bubbles:true}));
+              el.scrollTop = 0;
+              el.dispatchEvent(new Event('scroll', {bubbles:true}));
+            });
+        })()
+      `).catch(() => {});
+    }, 4000);
     setTimeout(startDataLoop, 5000);
 
     // After 20s, if still not logged in, tell ICQ to show sign-in button
