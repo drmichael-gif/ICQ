@@ -387,16 +387,41 @@ ipcMain.on('wa-show', () => {
   }, 3000);
 });
 
+// ── CDP click helper (Playwright-level reliability) ──────────────────────────
+let cdpAttached = false;
+async function cdpClick(x, y) {
+  if (!waWindow || waWindow.isDestroyed()) return false;
+  try {
+    const dbg = waWindow.webContents.debugger;
+    if (!cdpAttached) {
+      try { dbg.attach('1.3'); cdpAttached = true; }
+      catch (e) {
+        if (e.message?.includes('already')) cdpAttached = true;
+        else throw e;
+      }
+    }
+    const base = { x, y, modifiers: 0, button: 'left', buttons: 1, clickCount: 1,
+                   deltaX: 0, deltaY: 0, pointerType: 'mouse' };
+    await dbg.sendCommand('Input.dispatchMouseEvent', { ...base, type: 'mouseMoved',   button: 'none', buttons: 0 });
+    await dbg.sendCommand('Input.dispatchMouseEvent', { ...base, type: 'mousePressed'  });
+    await new Promise(r => setTimeout(r, 60));
+    await dbg.sendCommand('Input.dispatchMouseEvent', { ...base, type: 'mouseReleased' });
+    return true;
+  } catch (e) {
+    console.error('[ICQ] CDP click error:', e.message);
+    cdpAttached = false;
+    return false;
+  }
+}
+
 // ── IPC: click a contact ──────────────────────────────────────────────────────
 ipcMain.on('wa-click-contact', async (e, index) => {
   if (!waWindow || waWindow.isDestroyed()) return;
   const i = index | 0;
   stopMsgLoop();
   try {
-    // Dispatch the FULL pointer+mouse event sequence that React requires.
-    // React's event system listens at document root (bubbling) — dispatching
-    // with correct clientX/Y + bubbles:true guarantees it fires React's handler.
-    const result = await waWindow.webContents.executeJavaScript(`
+    // Get cell center coordinates
+    const info = await waWindow.webContents.executeJavaScript(`
       (function(){
         const sels = [
           '[data-testid="cell-frame-container"]',
@@ -411,42 +436,32 @@ ipcMain.on('wa-click-contact', async (e, index) => {
           if (cells.length > 0) break;
         }
         const cell = cells[${i}];
-        if (!cell) return { ok: false, total: cells.length };
-
-        const r  = cell.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const cy = r.top  + r.height / 2;
-
-        const mo = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
-        const po = { ...mo, isPrimary: true, pointerId: 1, pointerType: 'mouse' };
-
-        // Full sequence: pointer events + mouse events (React needs both)
-        cell.dispatchEvent(new PointerEvent('pointerover',  po));
-        cell.dispatchEvent(new MouseEvent('mouseover',      mo));
-        cell.dispatchEvent(new PointerEvent('pointermove',  po));
-        cell.dispatchEvent(new MouseEvent('mousemove',      mo));
-        cell.dispatchEvent(new PointerEvent('pointerdown',  po));
-        cell.dispatchEvent(new MouseEvent('mousedown',      mo));
-        cell.dispatchEvent(new PointerEvent('pointerup',    po));
-        cell.dispatchEvent(new MouseEvent('mouseup',        mo));
-        cell.dispatchEvent(new MouseEvent('click',          mo));
-
-        return { ok: true, total: cells.length, name: cell.textContent?.slice(0,40) };
+        if (!cell) return null;
+        const r = cell.getBoundingClientRect();
+        return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2),
+                 name: cell.textContent?.slice(0,40)||'', total: cells.length };
       })()`);
 
-    console.log('[ICQ] contact click result:', JSON.stringify(result));
+    if (!info) {
+      console.warn('[ICQ] cell', i, 'not found');
+      setTimeout(startMsgLoop, 2000);
+      return;
+    }
 
-    // Check if #main (or equivalent) appeared after the click
+    console.log('[ICQ] CDP-clicking contact', i, JSON.stringify(info));
+    await cdpClick(info.x, info.y);
+
+    // Verify chat opened 3s later
     setTimeout(async () => {
       try {
-        const state = await waWindow.webContents.executeJavaScript(`
+        const s = await waWindow.webContents.executeJavaScript(`
           (function(){
-            const main = document.getElementById('main') ||
-                         document.querySelector('[data-testid="conversation-panel"]') ||
-                         document.querySelector('[data-testid="conversation-compose-box"]');
-            return { hasMain: !!main, mainId: main?.id || main?.getAttribute('data-testid') || 'found-no-id' };
+            const p = document.getElementById('main') ||
+                      document.querySelector('[data-testid="conversation-panel"]') ||
+                      document.querySelector('[data-testid="msg-container"]');
+            return { found: !!p, id: p?.id||p?.getAttribute('data-testid')||'?' };
           })()`);
-        console.log('[ICQ] chat panel check (3s after click):', JSON.stringify(state));
+        console.log('[ICQ] chat panel 3s post-click:', JSON.stringify(s));
       } catch(_) {}
     }, 3000);
 
