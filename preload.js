@@ -1,36 +1,16 @@
+/**
+ * preload.js — runs in the main BrowserWindow (app.html)
+ * Exposes IPC bridges via contextBridge (contextIsolation: true)
+ */
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose minimal API to renderer
 contextBridge.exposeInMainWorld('icqBridge', {
-  platform: process.platform,
-});
+  // Window controls
+  minimize: () => ipcRenderer.send('win-minimize'),
+  maximize: () => ipcRenderer.send('win-maximize'),
+  close:    () => ipcRenderer.send('win-close'),
 
-// Play ICQ notification sound when WhatsApp notifications fire
-window.addEventListener('DOMContentLoaded', () => {
-  // Watch for new message indicators
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      // Check for unread badge changes in the title
-      if (document.title.match(/\(\d+\)/)) {
-        // Title changed to show unread count — ICQ "uh oh" moment
-        document.title = document.title.replace('WhatsApp', 'ICQ');
-      }
-    }
-  });
-
-  // Observe title changes
-  const titleEl = document.querySelector('title');
-  if (titleEl) {
-    observer.observe(titleEl, { childList: true, subtree: true, characterData: true });
-  }
-
-  // Also observe the whole document for title element creation
-  const headObserver = new MutationObserver(() => {
-    const title = document.querySelector('title');
-    if (title) {
-      observer.observe(title, { childList: true, subtree: true, characterData: true });
-      headObserver.disconnect();
-    }
-  });
-  headObserver.observe(document.head || document.documentElement, { childList: true, subtree: true });
+  // Get the WhatsApp CSS/JS from main process (reads files fresh each time)
+  getWaCss: () => ipcRenderer.invoke('get-wa-css'),
+  getWaJs:  () => ipcRenderer.invoke('get-wa-js'),
 });

@@ -1,151 +1,212 @@
 /* ============================================================
-   ICQ Classic Theme — CONSERVATIVE build
-   Key principle: NEVER hide parent containers. Only style what
-   we know exists. Let WhatsApp render, then theme on top.
+   ICQ Classic — WhatsApp Web Theming (injected into <webview>)
+   This runs INSIDE WhatsApp, NOT in the app.html chrome.
+   Strategy: kill dark mode, hide secondary pane + nav bar,
+   apply Win98 colors to contact list and chat area.
    ============================================================ */
 
 :root {
-  --win-bg:    #C0C0C0;
-  --win-light: #FFFFFF;
-  --win-dark:  #808080;
-  --win-black: #000000;
-  --win-titlebar: linear-gradient(90deg, #000080 0%, #1084D0 100%);
-  --cl-online:  #006600;
-  --cl-offline: #555555;
-  --chat-blue:  #0000CC;
-  --chat-red:   #CC0000;
+  --icq-bg:     #C0C0C0;
+  --icq-white:  #FFFFFF;
+  --icq-dark:   #808080;
+  --icq-online: #006600;
   --font: 'Tahoma','MS Sans Serif','Arial',sans-serif;
 }
 
-/* ── GLOBAL FONT ── */
-*, *::before, *::after {
+/* ── FORCE LIGHT MODE ── */
+html, body {
+  color-scheme: light !important;
   font-family: var(--font) !important;
-  box-sizing: border-box !important;
 }
 
-/* ── FORCE LIGHT MODE everywhere ── */
-html, body, #app {
-  background: var(--win-bg) !important;
-  color-scheme: light !important;
+/* Kill ALL dark-mode CSS custom properties */
+:root, body, [data-theme], [data-theme="dark"], [data-theme="light"],
+html[style*="color-scheme"], body[style*="background"] {
+  --background-default:              #FFFFFF !important;
+  --background-default-hover:        #D6EEDA !important;
+  --background-default-active:       #000080 !important;
+  --panel-background:                #C0C0C0 !important;
+  --panel-background-deeper:         #C0C0C0 !important;
+  --app-background:                  #C0C0C0 !important;
+  --conversation-panel-background:   #FFFFFF !important;
+  --chat-background:                 #FFFFFF !important;
+  --compose-input-background:        #FFFFFF !important;
+  --compose-panel-background:        #C0C0C0 !important;
+  --panel-header-background:         #C0C0C0 !important;
+  --panel-input-background:          #FFFFFF !important;
+  --search-input-background:         #FFFFFF !important;
+  --rich-text-input-background:      #FFFFFF !important;
+  --rich-text-panel-background:      #C0C0C0 !important;
+  --drawer-background:               #C0C0C0 !important;
+  --dropdown-background:             #FFFFFF !important;
+  --incoming-background:             transparent !important;
+  --outgoing-background:             transparent !important;
+  --system-message-background:       #C0C0C0 !important;
+  --border-default:                  #808080 !important;
+  --border-list:                     #C0C0C0 !important;
+  --icon:                            #333333 !important;
+  --icon-lighter:                    #555555 !important;
+  --icon-nt:                         #333333 !important;
+  --input-placeholder:               #888888 !important;
+  --primary:                         #3CC832 !important;
+  --primary-strong:                  #1A8218 !important;
+  --unread-marker-background:        #FF0000 !important;
+  --notification-badge-background:   #FF0000 !important;
+  color-scheme:                      light !important;
 }
 
-/* Kill dark mode CSS variables */
-body, [data-theme], [data-theme="dark"] {
-  --background-default: #FFFFFF !important;
-  --panel-background: #C0C0C0 !important;
-  --panel-background-deeper: #C0C0C0 !important;
-  --app-background: #C0C0C0 !important;
-  --conversation-panel-background: #FFFFFF !important;
-  --chat-background: #FFFFFF !important;
-  --compose-input-background: #FFFFFF !important;
-  --panel-header-background: #C0C0C0 !important;
-  --panel-input-background: #FFFFFF !important;
-  --search-input-background: #FFFFFF !important;
-  --rich-text-input-background: #FFFFFF !important;
-  --compose-panel-background: #C0C0C0 !important;
-  --incoming-background: transparent !important;
-  --outgoing-background: transparent !important;
-  --border-default: #808080 !important;
-  --border-list: #C0C0C0 !important;
-  --icon: #333333 !important;
-  --icon-lighter: #666666 !important;
-  --input-placeholder: #999999 !important;
-  color-scheme: light !important;
+/* Also kill inline dark backgrounds (rgb(18...), rgb(11...) etc.) */
+[style*="background-color: rgb(18,"],
+[style*="background-color: rgb(17,"],
+[style*="background-color: rgb(11,"],
+[style*="background-color: rgb(32,"],
+[style*="background-color: rgb(30,"],
+[style*="background-color: rgb(31,"] {
+  background-color: #C0C0C0 !important;
 }
 
-/* ── SIDE PANEL BACKGROUND ── */
+/* ── HIDE WhatsApp's left icon nav bar ── */
+/* The vertical strip with chat/status/communities/Meta AI icons */
+nav[aria-label],
+[role="navigation"],
+[data-testid="side-menu"],
+[data-testid="navigation"] {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  flex: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* ── HIDE WhatsApp's secondary/drawer pane ── */
+/* This is the large empty panel (Status, Channels, Communities) */
+[data-testid="drawer"],
+[data-testid="secondary-pane"],
+[aria-label*="Status" i],
+[aria-label*="Channels" i],
+[aria-label*="Communities" i],
+[aria-label*="Archive" i],
+[data-asset-type="secondary-pane"] {
+  display: none !important;
+}
+
+/* Also hide by content: any container with the Mac download prompt */
+[data-testid="download-mac-app"],
+[data-testid="intro-md-beta-logo-dark"],
+[data-testid="intro-md-beta-logo-light"] {
+  display: none !important;
+}
+
+/* ── SIDE PANEL (#side) ── */
 #side, #pane-side {
   background: #C0C0C0 !important;
+  font-family: var(--font) !important;
 }
 
-/* ── CONTACT LIST scroll area ── */
-[data-testid="chat-list"] {
-  background: #FFFFFF !important;
-}
-
-/* ── CONTACT ITEMS: hide avatar + message preview, show name ── */
-/* Hide avatar */
-[data-testid^="cell-frame"] [data-testid="user-avatar"],
-[data-testid^="cell-frame"] [data-testid="group-avatar"],
-[data-testid^="cell-frame"] img[class*="avatar"],
-[data-testid^="cell-frame"] [class*="avatar"] {
-  display: none !important;
-}
-/* Hide message preview and timestamp in contact rows */
-[data-testid^="cell-frame"] [data-testid*="msg"],
-[data-testid^="cell-frame"] [class*="last-msg"],
-[data-testid^="cell-frame"] [class*="status"],
-[data-testid^="cell-frame"] [data-testid="msg-time"] {
-  display: none !important;
-}
-/* Contact name: green and bold */
-[data-testid^="cell-frame"] [data-testid="cell-frame-title"] span,
-[data-testid^="cell-frame"] span[dir="auto"]:first-of-type {
-  color: #006600 !important;
-  font-weight: bold !important;
-  font-size: 12px !important;
-}
-/* Cell row style */
-[data-testid^="cell-frame"] {
-  background: #FFFFFF !important;
-  border-bottom: none !important;
-  min-height: 22px !important;
-  padding: 2px 4px !important;
-}
-[data-testid^="cell-frame"]:hover {
-  background: #D6EEDA !important;
-}
-
-/* ── HIDE WA header inside #side ── */
-#side header,
+/* Hide WA's #side header row (says "WhatsApp") */
+#side > header,
 #side > div > header,
 [data-testid="chatlist-header"] {
   display: none !important;
 }
 
-/* ── HIDE filter pills (All / Unread / Favorites / etc.) ── */
+/* Hide filter pills (All / Unread / Favorites) */
 [data-testid="chat-list-filter"],
 [data-testid="archive-button"],
-button[data-testid*="filter"] {
+button[data-testid*="filter"],
+[class*="filter-container"] {
   display: none !important;
 }
 
-/* ── HIDE WA nav bar (new left icon strip) ── */
-nav[aria-label] {
-  display: none !important;
-  width: 0 !important;
-  overflow: hidden !important;
+/* Search bar: Win98 style */
+[data-testid="chat-list-search"],
+[data-testid="search-container"] {
+  background: #C0C0C0 !important;
+  padding: 2px !important;
+}
+[data-testid="chat-list-search"] input,
+[data-testid="chat-list-search"] [contenteditable],
+[data-testid="search-container"] input {
+  background: #FFFFFF !important;
+  border: 2px inset #808080 !important;
+  border-radius: 0 !important;
+  color: #000000 !important;
+  font-family: var(--font) !important;
+  font-size: 11px !important;
+  box-shadow: none !important;
 }
 
-/* ── CHAT WINDOW background ── */
+/* ── CONTACT LIST items ── */
+[data-testid="chat-list"] {
+  background: #FFFFFF !important;
+}
+
+/* Cell rows */
+[data-testid^="cell-frame"] {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #C0C0C0 !important;
+  min-height: 22px !important;
+  padding: 2px 6px !important;
+  cursor: pointer !important;
+  transition: none !important;
+}
+[data-testid^="cell-frame"]:hover {
+  background: #D6EEDA !important;
+}
+
+/* Hide avatars */
+[data-testid^="cell-frame"] [data-testid="user-avatar"],
+[data-testid^="cell-frame"] [data-testid="group-avatar"],
+[data-testid^="cell-frame"] img {
+  display: none !important;
+}
+
+/* Show contact name in green */
+[data-testid^="cell-frame"] span[dir="auto"]:first-of-type,
+[data-testid="cell-frame-title"] span {
+  color: #006600 !important;
+  font-weight: bold !important;
+  font-size: 12px !important;
+  font-family: var(--font) !important;
+}
+
+/* Hide message preview text and timestamp */
+[data-testid^="cell-frame"] span[dir="auto"]:not(:first-of-type),
+[data-testid^="cell-frame"] [data-testid*="msg"],
+[data-testid^="cell-frame"] [class*="last-msg"],
+[data-testid^="cell-frame"] [class*="status-icon"],
+[data-testid^="cell-frame"] [data-testid="msg-time"] {
+  display: none !important;
+}
+
+/* ── MAIN CHAT AREA ── */
 #main {
   background: #C0C0C0 !important;
+  font-family: var(--font) !important;
 }
 
-/* ── HIDE native chat header (we inject our own title bar) ── */
+/* Hide WA's native chat header */
 #main > header,
 [data-testid="conversation-header"] {
   display: none !important;
 }
 
-/* ── MESSAGE AREA ── */
+/* Message/conversation panel */
 [data-testid="conversation-panel-body"],
-.copyable-area > div {
+.copyable-area {
   background: #FFFFFF !important;
   background-image: none !important;
 }
-/* Kill the chat wallpaper */
-[data-asset-chat-background] {
-  background-color: #FFFFFF !important;
-  background-image: none !important;
-}
+
+/* Kill wallpaper/background image */
+[data-asset-chat-background],
 [data-testid="chat-background"] {
-  background-color: #FFFFFF !important;
-  background-image: none !important;
-  opacity: 0 !important;
+  display: none !important;
 }
 
-/* ── MESSAGE BUBBLES: flat, no background ── */
+/* ── MESSAGE BUBBLES: no bubbles — flat text ── */
 .message-in > div,
 .message-out > div,
 [class*="message-in"] > div,
@@ -154,26 +215,43 @@ nav[aria-label] {
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+  padding: 1px 4px !important;
 }
-/* Hide bubble tails */
+
+/* Kill the tail/arrow on bubbles */
 [data-testid="tail-in"],
-[data-testid="tail-out"] {
+[data-testid="tail-out"],
+[data-icon="tail-in"],
+[data-icon="tail-out"] {
   display: none !important;
 }
-/* Message text color */
-[data-testid="balloon-text"],
-.copyable-text {
+
+/* Message text */
+.message-in span.selectable-text,
+.message-out span.selectable-text,
+[data-testid="balloon-text"] {
   color: #000000 !important;
+  font-family: var(--font) !important;
   font-size: 12px !important;
 }
-/* Timestamp in gray */
+
+/* Timestamp */
 [data-testid="msg-meta"] {
   color: #808080 !important;
   font-size: 10px !important;
 }
 
-/* ── INPUT AREA ── */
-footer {
+/* Day separator */
+[data-testid="msg-day-separator"] span {
+  background: #C0C0C0 !important;
+  border: 1px solid #808080 !important;
+  border-radius: 0 !important;
+  padding: 0 8px !important;
+  font-size: 10px !important;
+}
+
+/* ── COMPOSE / FOOTER ── */
+footer, [data-testid="conversation-compose-box-input"] {
   background: #C0C0C0 !important;
 }
 [role="textbox"][contenteditable="true"] {
@@ -181,36 +259,39 @@ footer {
   border: 2px inset #808080 !important;
   border-radius: 0 !important;
   color: #000000 !important;
+  font-family: var(--font) !important;
   font-size: 12px !important;
   box-shadow: none !important;
 }
 
-/* ── SEND BUTTON ── */
-[data-testid="send"] {
-  color: #000000 !important;
-}
-
 /* ── WIN98 SCROLLBARS ── */
-::-webkit-scrollbar       { width: 16px !important; height: 16px !important; }
-::-webkit-scrollbar-track { background: #C0C0C0 !important; }
-::-webkit-scrollbar-thumb {
+::-webkit-scrollbar        { width: 16px !important; height: 16px !important; }
+::-webkit-scrollbar-track  { background: #C0C0C0 !important; }
+::-webkit-scrollbar-thumb  {
   background: #C0C0C0 !important;
   border: 1px solid;
   border-color: #FFFFFF #808080 #808080 #FFFFFF !important;
   border-radius: 0 !important;
 }
+::-webkit-scrollbar-button {
+  display: block !important;
+  width: 16px !important;
+  height: 16px !important;
+  background: #C0C0C0 !important;
+  border: 1px solid;
+  border-color: #FFFFFF #808080 #808080 #FFFFFF !important;
+}
 
-/* ── ICQ title bars injected by JS ── */
+/* ── ICQ chrome classes — injected by inject.js ── */
 .icq-titlebar {
   height: 22px;
   background: linear-gradient(90deg, #000080 0%, #1084D0 100%);
   display: flex;
   align-items: center;
   padding: 0 3px;
-  user-select: none;
   flex-shrink: 0;
-  -webkit-app-region: drag;
   cursor: default;
+  user-select: none;
 }
 .icq-titlebar-text {
   flex: 1;
@@ -221,11 +302,7 @@ footer {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.icq-titlebar-btns {
-  display: flex;
-  gap: 1px;
-  -webkit-app-region: no-drag;
-}
+.icq-titlebar-btns { display: flex; gap: 1px; }
 .icq-win-btn {
   width: 16px; height: 14px;
   background: #C0C0C0;
@@ -235,12 +312,9 @@ footer {
   cursor: pointer;
   font-size: 8px; font-weight: bold;
   color: #000000 !important;
-  line-height: 1;
 }
-
-/* ── ICQ contact list chrome injected by JS ── */
 .icq-cl-header {
-  height: 28px;
+  height: 26px;
   display: flex;
   align-items: center;
   padding: 0 3px;
@@ -250,21 +324,19 @@ footer {
   flex-shrink: 0;
 }
 .icq-cl-header-btn {
-  width: 26px; height: 22px;
+  width: 24px; height: 20px;
   background: #C0C0C0;
   border: 1px solid;
   border-color: #FFFFFF #808080 #808080 #FFFFFF;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  font-size: 10px;
+  cursor: pointer; font-size: 10px;
 }
 .icq-divider {
-  padding: 3px 8px 1px;
-  font-size: 11px;
+  padding: 2px 8px;
+  font-size: 10px;
   color: #808080 !important;
   background: #FFFFFF;
-  border-bottom: 1px solid #C0C0C0;
-  user-select: none;
+  border-top: 1px solid #C0C0C0;
 }
 .icq-cl-bottom {
   display: flex; flex-direction: column; gap: 1px;
@@ -274,18 +346,16 @@ footer {
   flex-shrink: 0;
 }
 .icq-cl-btn {
-  display: flex; align-items: center; gap: 4px;
   padding: 2px 6px;
   font-size: 11px; font-weight: bold;
   color: #000000 !important;
-  cursor: pointer;
   background: #C0C0C0;
   border: 1px solid;
   border-color: #FFFFFF #808080 #808080 #FFFFFF;
+  cursor: pointer;
   font-family: var(--font) !important;
+  display: flex; align-items: center; gap: 4px;
 }
-
-/* ── ICQ chat chrome injected by JS ── */
 .icq-user-details {
   margin: 3px 6px 2px;
   padding: 2px 8px 4px;
@@ -293,15 +363,10 @@ footer {
   background: #C0C0C0;
   flex-shrink: 0;
 }
-.icq-ud-legend {
-  font-size: 11px;
-  color: #000000 !important;
-  padding: 0 3px;
-}
+.icq-ud-legend { font-size: 11px; color: #000000 !important; padding: 0 3px; }
 .icq-ud-row {
-  display: flex; align-items: center;
-  flex-wrap: wrap; gap: 4px 8px;
-  font-size: 11px; color: #000000 !important;
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 4px 8px; font-size: 11px; color: #000000 !important;
 }
 .icq-send-bar {
   display: flex; align-items: center; gap: 5px;
@@ -311,20 +376,13 @@ footer {
   border-top: 1px solid #FFFFFF;
 }
 .icq-send-btn {
-  padding: 2px 14px;
-  font-size: 11px; font-weight: bold;
-  background: #C0C0C0;
-  cursor: pointer;
-  margin-left: auto;
+  padding: 2px 14px; font-size: 11px; font-weight: bold;
+  background: #C0C0C0; cursor: pointer; margin-left: auto;
   border: 2px solid;
   border-color: #FFFFFF #808080 #808080 #FFFFFF;
   font-family: var(--font) !important;
   color: #000000 !important;
 }
-.icq-pf {
-  font-size: 12px !important;
-  font-weight: bold !important;
-  display: block;
-}
+.icq-pf { font-size: 12px !important; font-weight: bold !important; display: block; }
 .icq-pf-out { color: #0000CC !important; }
 .icq-pf-in  { color: #CC0000 !important; }

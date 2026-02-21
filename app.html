@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ICQ</title>
+  <style>
+    /* ── Win98 window chrome ── */
+    :root {
+      --win-bg:    #C0C0C0;
+      --win-light: #FFFFFF;
+      --win-dark:  #808080;
+      --win-tb:    linear-gradient(90deg, #000080 0%, #1084D0 100%);
+      --font: 'Tahoma','MS Sans Serif','Arial',sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--win-bg);
+      font-family: var(--font);
+      font-size: 12px;
+      overflow: hidden;
+      user-select: none;
+    }
+    /* ── Title bar ── */
+    #titlebar {
+      height: 28px;
+      background: var(--win-tb);
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      -webkit-app-region: drag;
+      flex-shrink: 0;
+    }
+    #titlebar-icon { font-size: 14px; margin-right: 5px; }
+    #titlebar-text {
+      flex: 1;
+      color: #fff;
+      font-size: 11px;
+      font-weight: bold;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    #titlebar-btns {
+      display: flex;
+      gap: 2px;
+      -webkit-app-region: no-drag;
+    }
+    .tb-btn {
+      width: 18px; height: 18px;
+      background: var(--win-bg);
+      border: 1px solid;
+      border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 9px; font-weight: bold; color: #000;
+      line-height: 1;
+    }
+    .tb-btn:active {
+      border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+    }
+
+    /* ── Content area below title bar ── */
+    #content {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 28px);
+      background: var(--win-bg);
+    }
+
+    /* ── Menu bar (optional Win98 menu) ── */
+    #menubar {
+      display: flex;
+      height: 20px;
+      align-items: center;
+      background: var(--win-bg);
+      border-bottom: 1px solid var(--win-dark);
+      flex-shrink: 0;
+      padding: 0 4px;
+      gap: 2px;
+    }
+    .menu-item {
+      padding: 0 8px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .menu-item:hover { background: #000080; color: #fff; }
+
+    /* ── WhatsApp webview ── */
+    #wa-view {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      border: 2px solid;
+      border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+    }
+
+    /* ── Status bar ── */
+    #statusbar {
+      height: 20px;
+      background: var(--win-bg);
+      border-top: 1px solid var(--win-dark);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-size: 10px;
+      color: #000;
+      flex-shrink: 0;
+    }
+    .status-panel {
+      border: 1px solid;
+      border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+      padding: 0 6px;
+      height: 14px;
+      display: flex;
+      align-items: center;
+      font-size: 10px;
+      margin-right: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Win98 Title Bar -->
+  <div id="titlebar">
+    <span id="titlebar-icon">🌸</span>
+    <span id="titlebar-text">ICQ Messenger</span>
+    <div id="titlebar-btns">
+      <div class="tb-btn" id="btn-min" title="Minimize">_</div>
+      <div class="tb-btn" id="btn-max" title="Maximize">□</div>
+      <div class="tb-btn" id="btn-close" title="Close" style="font-size:8px">✕</div>
+    </div>
+  </div>
+
+  <!-- Content: Menu bar + WhatsApp webview + Status bar -->
+  <div id="content">
+
+    <div id="menubar">
+      <div class="menu-item" id="menu-icq">ICQ</div>
+      <div class="menu-item" id="menu-msg">Message</div>
+      <div class="menu-item" id="menu-help">Help</div>
+    </div>
+
+    <!-- WhatsApp Web inside a webview -->
+    <webview
+      id="wa-view"
+      src="https://web.whatsapp.com/"
+      preload="./wa-preload.js"
+      useragent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      partition="persist:whatsapp"
+      allowpopups
+    ></webview>
+
+    <div id="statusbar">
+      <div class="status-panel" id="status-text">🌸 ICQ &mdash; Loading&hellip;</div>
+      <div class="status-panel" id="status-time"></div>
+    </div>
+
+  </div>
+
+  <script>
+    // Use contextBridge API (exposed via preload.js as window.icqBridge)
+    const bridge = window.icqBridge;
+
+    // ── Title bar buttons ──
+    document.getElementById('btn-min').addEventListener('click',   () => bridge.minimize());
+    document.getElementById('btn-max').addEventListener('click',   () => bridge.maximize());
+    document.getElementById('btn-close').addEventListener('click', () => bridge.close());
+
+    // ── Clock in status bar ──
+    function updateClock() {
+      const now = new Date();
+      const h = now.getHours() % 12 || 12;
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const ap = now.getHours() >= 12 ? 'PM' : 'AM';
+      document.getElementById('status-time').textContent = `${h}:${m} ${ap}`;
+    }
+    updateClock();
+    setInterval(updateClock, 10000);
+
+    // ── WhatsApp webview ──
+    const wv = document.getElementById('wa-view');
+    const statusText = document.getElementById('status-text');
+
+    wv.addEventListener('dom-ready', async () => {
+      statusText.textContent = '🌸 ICQ — Connected';
+      console.log('[ICQ] webview dom-ready');
+
+      // Get CSS and JS from main process (reads files)
+      const css = await bridge.getWaCss();
+      const js  = await bridge.getWaJs();
+
+      // Inject CSS into WhatsApp
+      wv.insertCSS(css).catch(e => console.error('[ICQ] CSS inject error:', e));
+
+      // Inject JS into WhatsApp
+      wv.executeJavaScript(js).catch(e => console.error('[ICQ] JS inject error:', e));
+
+      // Re-inject CSS periodically (WA overwrites it sometimes)
+      setInterval(async () => {
+        const freshCss = await bridge.getWaCss();
+        wv.insertCSS(freshCss).catch(() => {});
+      }, 8000);
+    });
+
+    // Re-inject on WhatsApp SPA navigation
+    wv.addEventListener('did-navigate-in-page', async () => {
+      const css = await bridge.getWaCss();
+      const js  = await bridge.getWaJs();
+      wv.insertCSS(css).catch(() => {});
+      wv.executeJavaScript(js).catch(() => {});
+    });
+
+    // Update title bar with unread count
+    wv.addEventListener('page-title-updated', (e) => {
+      document.getElementById('titlebar-text').textContent =
+        e.title.replace(/WhatsApp/g, 'ICQ') || 'ICQ Messenger';
+    });
+
+    wv.addEventListener('did-fail-load', (e) => {
+      statusText.textContent = `⚠️ Load failed: ${e.errorDescription}`;
+      console.error('[ICQ] webview load failed:', e);
+    });
+
+    wv.addEventListener('console-message', (e) => {
+      if (e.message.includes('[ICQ')) console.log('[WV]', e.message);
+    });
+
+    // ── Menu items ──
+    document.getElementById('menu-icq').addEventListener('click', () => {
+      // Could show a dropdown — for now just reload
+    });
+  </script>
+</body>
+</html>
