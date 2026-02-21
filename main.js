@@ -184,18 +184,67 @@ function createWaWindow() {
   });
 
   const onLoaded = () => {
-    console.log('[ICQ] WA page loaded — waiting 10s for WASM init before scraping');
-    // WhatsApp loads heavy WASM modules on startup (especially on Apple Silicon).
-    // Calling executeJavaScript during WASM init triggers a V8 segfault.
-    // 10s gives it plenty of time to fully initialize.
+    console.log('[ICQ] WA page loaded');
+
+    // 1) Immediately inject CSS to force real heights on the contact list.
+    //    This is pure CSS — no JS executed, so safe during WASM init.
+    //    Without a real height, WhatsApp's virtual scroll renders zero items.
+    waWindow.webContents.insertCSS(`
+      html, body, #app {
+        width:  1280px !important;
+        height: 900px  !important;
+        min-height: 900px !important;
+      }
+      #side, #pane-side {
+        height: 860px !important;
+        min-height: 860px !important;
+        display: block !important;
+      }
+      [data-testid="chat-list"],
+      [aria-label*="Chat list"] {
+        height: 820px !important;
+        min-height: 820px !important;
+        overflow-y: auto !important;
+      }
+    `).catch(e => console.error('[ICQ] insertCSS error:', e.message));
+
+    // 2) At 9s — WASM is fully settled. Nudge virtual scroll with
+    //    scroll events so IntersectionObserver sees real list items.
+    setTimeout(async () => {
+      try {
+        await waWindow.webContents.executeJavaScript(`
+          (function(){
+            window.dispatchEvent(new Event('resize'));
+            const sels = [
+              '#side', '#pane-side',
+              '[data-testid="chat-list"]',
+              '[aria-label*="Chat list"]',
+            ];
+            sels.map(s => document.querySelector(s)).filter(Boolean).forEach(el => {
+              el.style.height = '860px';
+              el.style.minHeight = '860px';
+              el.scrollTop = 2;
+              el.dispatchEvent(new Event('scroll', { bubbles: true }));
+              el.scrollTop = 0;
+              el.dispatchEvent(new Event('scroll', { bubbles: true }));
+            });
+            window.dispatchEvent(new Event('resize'));
+          })()
+        `);
+        console.log('[ICQ] Virtual scroll nudge done');
+      } catch(e) { console.error('[ICQ] nudge error:', e.message); }
+    }, 9000);
+
+    // 3) Start scraping at 10s (WASM settled, nudge already done)
     setTimeout(startContactLoop, 10000);
-    // If no contacts after 35s, show sign-in
+
+    // 4) If still no contacts at 40s → prompt sign-in
     setTimeout(() => {
       if (!statusSent) {
-        console.log('[ICQ] No contacts after 35s — prompting sign-in');
+        console.log('[ICQ] No contacts after 40s — prompting sign-in');
         icqWindow?.webContents.send('wa-status', { status: 'needsLogin' });
       }
-    }, 35000);
+    }, 40000);
   };
 
   let loaded = false;
