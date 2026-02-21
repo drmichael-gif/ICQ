@@ -162,31 +162,19 @@ function createWaWindow() {
 
   waWindow = new BrowserWindow({
     width: 1280, height: 900,
-    show: false,                    // keep hidden — Electron still renders it
-    paintWhenInitiallyHidden: true, // explicit: paint even when show:false
+    show: false,
+    paintWhenInitiallyHidden: true,
     webPreferences: {
-      contextIsolation:  false,
-      nodeIntegration:   false,
-      partition:         'persist:whatsapp',
-      backgroundThrottling: false,  // prevent rendering slowdowns
+      contextIsolation:     true,   // MUST be true — false causes V8 WASM crash
+      nodeIntegration:      false,
+      partition:            'persist:whatsapp',
+      backgroundThrottling: false,
     },
   });
 
   waWindow.webContents.setUserAgent(WA_UA);
-
-  // Enable device emulation after DOM is ready (not before — can crash)
-  waWindow.webContents.on('dom-ready', () => {
-    try {
-      waWindow.webContents.enableDeviceEmulation({
-        screenPosition:    'desktop',
-        screenSize:        { width: 1280, height: 900 },
-        viewPosition:      { x: 0, y: 0 },
-        deviceScaleFactor: 1,
-        viewSize:          { width: 1280, height: 900 },
-        fitToView:         false,
-      });
-    } catch (e) { console.error('[ICQ] enableDeviceEmulation error:', e.message); }
-  });
+  // NOTE: enableDeviceEmulation removed — it triggers the same V8 segfault
+  // capturePage() works fine without it on show:false + paintWhenInitiallyHidden:true
 
   waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
 
@@ -196,31 +184,18 @@ function createWaWindow() {
   });
 
   const onLoaded = () => {
-    console.log('[ICQ] WA page loaded — nudging virtual scroll in 4s, scraping in 5s');
-    // Nudge contact list virtual scroll
-    setTimeout(() => {
-      waWindow.webContents.executeJavaScript(`
-        (function(){
-          window.dispatchEvent(new Event('resize'));
-          ['[data-testid="chat-list"]','#side','[aria-label*="Chat list"]']
-            .map(s => document.querySelector(s)).filter(Boolean)
-            .forEach(el => {
-              el.scrollTop = 1;
-              el.dispatchEvent(new Event('scroll', {bubbles:true}));
-              el.scrollTop = 0;
-              el.dispatchEvent(new Event('scroll', {bubbles:true}));
-            });
-        })()
-      `).catch(() => {});
-    }, 4000);
-    setTimeout(startContactLoop, 5000);
-    // If no contacts after 20s, show sign-in
+    console.log('[ICQ] WA page loaded — waiting 10s for WASM init before scraping');
+    // WhatsApp loads heavy WASM modules on startup (especially on Apple Silicon).
+    // Calling executeJavaScript during WASM init triggers a V8 segfault.
+    // 10s gives it plenty of time to fully initialize.
+    setTimeout(startContactLoop, 10000);
+    // If no contacts after 35s, show sign-in
     setTimeout(() => {
       if (!statusSent) {
-        console.log('[ICQ] No contacts after 20s — prompting sign-in');
+        console.log('[ICQ] No contacts after 35s — prompting sign-in');
         icqWindow?.webContents.send('wa-status', { status: 'needsLogin' });
       }
-    }, 20000);
+    }, 35000);
   };
 
   let loaded = false;
