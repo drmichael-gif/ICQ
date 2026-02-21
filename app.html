@@ -302,8 +302,10 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
       </div>
       <!-- Loading placeholder -->
       <div id="chat-loading">Loading chat…</div>
-      <!-- Native message bubbles -->
+      <!-- Native message bubbles (shown when text extraction works) -->
       <div id="msg-log"></div>
+      <!-- Screenshot fallback (shown when text extraction fails) -->
+      <img id="chat-img" alt="chat" style="display:none;width:100%;height:auto;vertical-align:top;border:0" />
     </div>
 
     <div id="send-bar">
@@ -417,9 +419,11 @@ function selectContact(i) {
 
   // Clear previous messages
   renderedIds.clear();
-  const ml = $('msg-log');
+  const ml  = $('msg-log');
+  const img = $('chat-img');
   ml.innerHTML = '';
   ml.style.display = 'none';
+  if (img) { img.src = ''; img.style.display = 'none'; }
 
   // Show loading, hide welcome
   $('welcome').style.display = 'none';
@@ -464,6 +468,20 @@ bridge.onMessages(msgs => {
     const log = $('log');
     log.scrollTop = log.scrollHeight;
   }
+});
+
+// ── Screenshot fallback (when text extraction doesn't work) ───────────────────
+bridge.onChatImg(src => {
+  // Only show screenshot if we have no native messages yet
+  const ml  = $('msg-log');
+  const img = $('chat-img');
+  if (ml && ml.children.length > 0) return; // already have native bubbles
+  $('chat-loading').style.display = 'none';
+  $('welcome').style.display = 'none';
+  if (ml) ml.style.display = 'none';
+  if (img) { img.src = src; img.style.display = 'block'; }
+  const log = $('log');
+  log.scrollTop = log.scrollHeight;
 });
 
 // ── Send message ───────────────────────────────────────────────────────────────

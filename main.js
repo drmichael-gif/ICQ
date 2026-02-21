@@ -1,12 +1,12 @@
 /**
  * main.js — ICQ Messenger
  *
- * NEW APPROACH: waWindow is SHOWN but positioned off-screen (right of display).
- * A visible window has full rendering — virtual scroll, layout, capturePage all work.
- * No enableDeviceEmulation. No setOpacity. No hidden-window tricks.
+ * waWindow: visible, off-screen (right of display) — full rendering, clicks work
+ * icqWindow: always-on-top — ICQ UI
  *
- * Contacts : DOM-scraped from waWindow every 2s
- * Messages : capturePage() screenshot of #main panel, shown in ICQ chat area
+ * Contacts: DOM-scraped every 2s
+ * Messages: capturePage() screenshot → parse [data-pre-plain-text] attrs for text
+ *           Falls back to showing raw screenshot if text extraction fails.
  */
 const { app, BrowserWindow, ipcMain, session, Menu, screen } = require('electron');
 const path = require('path');
@@ -14,7 +14,7 @@ const path = require('path');
 let icqWindow    = null;
 let waWindow     = null;
 let contactTimer = null;
-let msgTimer     = null;
+let screenTimer  = null;
 let statusSent   = false;
 
 const WA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -56,8 +56,6 @@ const CONTACT_SCRAPER = `
         if (found.length > 0) { cells = found; break; }
       } catch(_) {}
     }
-
-    // Fallback: tabindex children of #side that contain a name span
     if (!cells.length) {
       const side = document.getElementById('side') ||
                    document.querySelector('[aria-label*="Chat list"]');
@@ -66,7 +64,6 @@ const CONTACT_SCRAPER = `
           .filter(el => el.querySelector('span[dir="auto"], [title]') && el.offsetHeight > 20);
       }
     }
-
     const contacts = [];
     cells.forEach((cell, i) => {
       const nameEl =
@@ -80,15 +77,12 @@ const CONTACT_SCRAPER = `
       const unreadEl = cell.querySelector('[data-testid="icon-unread-count"]') ||
                        cell.querySelector('[aria-label*="unread"]');
       const timeEl   = cell.querySelector('[data-testid="msg-time"]');
-      const allSpans = Array.from(cell.querySelectorAll('span[dir="auto"]'));
       contacts.push({
         index: i, name,
         unread: unreadEl?.textContent?.trim() || '',
         time:   timeEl?.textContent?.trim()   || '',
-        preview: allSpans[1]?.textContent?.trim() || '',
       });
     });
-
     const chatEl =
       document.querySelector('[data-testid="conversation-header"] span[dir="auto"]') ||
       document.querySelector('#main header span[dir="auto"]');
@@ -97,17 +91,58 @@ const CONTACT_SCRAPER = `
       !!document.getElementById('side') ||
       !!document.querySelector('[data-testid="chat-list"]') ||
       !!document.querySelector('[aria-label*="Chat list"]');
+    return { ok: true, contacts, chatName: chatEl?.textContent?.trim() || '', isLoggedIn };
+  } catch(e) { return { ok: false, error: e.message }; }
+})()
+`;
 
-    // Log what testids exist in #side for debugging
-    const side = document.getElementById('side');
-    if (side && contacts.length === 0) {
-      const tids = [...new Set(Array.from(side.querySelectorAll('[data-testid]'))
-        .map(el => el.getAttribute('data-testid')).filter(Boolean))].slice(0, 20);
-      console.log('[ICQ] no contacts found. #side testids:', tids.join(', '));
-      console.log('[ICQ] #side childCount:', side.querySelectorAll('*').length, 'offsetH:', side.offsetHeight);
+// ── Message text extractor (uses data-pre-plain-text + selectable spans) ──────
+const MESSAGE_EXTRACTOR = `
+(function() {
+  try {
+    // data-pre-plain-text is a WA attribute like "[10:30 AM, 1/15/2024] Mike: "
+    // It appears on message bubble wrapper divs
+    const bubbles = Array.from(document.querySelectorAll('[data-pre-plain-text]'));
+    if (bubbles.length > 0) {
+      const messages = bubbles.map((el, idx) => {
+        const pre  = el.getAttribute('data-pre-plain-text') || '';
+        // Parse: "[HH:MM AM, D/M/YYYY] Sender: "  or  "[HH:MM AM, D/M/YYYY] You: "
+        const m    = pre.match(/\\[([^\\]]+)\\]\\s*(.*?):\\s*$/);
+        const time   = m ? m[1].split(',')[0].trim() : '';
+        const sender = m ? m[2].trim() : '';
+        // Get text content
+        const textEl = el.querySelector('span.selectable-text') ||
+                       el.querySelector('[data-testid="msg-text"]') ||
+                       el.querySelector('span[dir="ltr"], span[dir="rtl"]');
+        const text = (textEl?.innerText || textEl?.textContent || '').trim();
+        // Outgoing if sender is empty or "You" or has delivery icon
+        const isOut = sender === '' || sender === 'You' ||
+                      !!el.querySelector('[data-testid="msg-dbl-check"],[data-testid="msg-check"],[data-icon="msg-dbl-check"]');
+        const id = idx + ':' + pre.slice(0,30) + text.slice(0,10);
+        return { id, text: text || '📎 Media', sender: isOut ? '' : sender, time, isOut };
+      }).filter(m => m.text);
+      return { ok: true, method: 'pre-plain-text', messages };
     }
 
-    return { ok: true, contacts, chatName: chatEl?.textContent?.trim() || '', isLoggedIn };
+    // Fallback: selectable-text spans in #main area
+    const main = document.getElementById('main') ||
+                 document.querySelector('[data-testid="conversation-panel"]');
+    if (!main) return { ok: false, error: 'no main' };
+
+    const spans = Array.from(main.querySelectorAll('span.selectable-text.copyable-text'));
+    if (spans.length > 0) {
+      const messages = spans.map((el, idx) => {
+        const text = (el.innerText || el.textContent || '').trim();
+        if (!text) return null;
+        const row = el.closest('[data-id]') || el.closest('[role="row"]');
+        const isOut = !!(row?.querySelector('[data-testid="msg-dbl-check"],[data-icon="msg-dbl-check"]'));
+        const timeEl = row?.querySelector('[data-testid="msg-time"]');
+        return { id: idx + ':' + text.slice(0,20), text, sender: '', time: timeEl?.textContent?.trim()||'', isOut };
+      }).filter(Boolean);
+      if (messages.length) return { ok: true, method: 'selectable-text', messages };
+    }
+
+    return { ok: false, error: 'no messages found' };
   } catch(e) { return { ok: false, error: e.message }; }
 })()
 `;
@@ -118,7 +153,7 @@ async function scrapeContacts() {
   if (!icqWindow || icqWindow.isDestroyed()) return;
   try {
     const data = await waWindow.webContents.executeJavaScript(CONTACT_SCRAPER);
-    if (!data?.ok) { console.error('[ICQ] scraper error:', data?.error); return; }
+    if (!data?.ok) return;
     if (data.isLoggedIn && !statusSent) {
       statusSent = true;
       icqWindow.webContents.send('wa-status', { status: 'ready' });
@@ -130,163 +165,70 @@ async function scrapeContacts() {
 
 function startContactLoop() {
   if (contactTimer) return;
-  console.log('[ICQ] Starting contact loop');
   scrapeContacts();
   contactTimer = setInterval(scrapeContacts, 2000);
 }
 
-// ── Message scraper ───────────────────────────────────────────────────────────
-const MESSAGE_SCRAPER = `
-(function() {
-  try {
-    // WhatsApp 2024 may not use #main — try several selectors
-    const main =
-      document.getElementById('main') ||
-      document.querySelector('[data-testid="conversation-panel"]') ||
-      document.querySelector('[data-testid="conversation-compose-box"]')?.closest('div[role]') ||
-      document.querySelector('[data-testid="msg-container"]')?.closest('[id],[role="region"],[role="main"]') ||
-      document.querySelector('div[data-tab="8"]') ||
-      document.querySelector('div[data-tab="7"]') ||
-      null;
-
-    if (!main) {
-      console.log('[ICQ msg] no chat panel found (tried #main + 5 fallbacks)');
-      // Log ALL data-testid values on the page to help debug
-      const pageTestIds = [...new Set(Array.from(document.querySelectorAll('[data-testid]'))
-        .map(el => el.getAttribute('data-testid')).filter(Boolean))].slice(0, 40);
-      console.log('[ICQ msg] page testids:', pageTestIds.join(', '));
-      return { ok: false, error: 'no chat panel' };
-    }
-    console.log('[ICQ msg] chat panel found:', main.id || main.getAttribute('data-testid') || main.tagName);
-
-    // ── Diagnostic: log what's in #main ──
-    const allTestIds = [...new Set(Array.from(main.querySelectorAll('[data-testid]'))
-      .map(el => el.getAttribute('data-testid')).filter(Boolean))].slice(0, 30);
-    const allRoles = [...new Set(Array.from(main.querySelectorAll('[role]'))
-      .map(el => el.getAttribute('role')).filter(Boolean))].slice(0, 20);
-    console.log('[ICQ msg] #main testids:', allTestIds.join(', '));
-    console.log('[ICQ msg] #main roles:', allRoles.join(', '));
-
-    const messages = [];
-
-    // ── Try many selectors for message rows ──
-    const rowSelectors = [
-      '[data-testid="msg-container"]',
-      '[data-id]',
-      '[role="row"]',
-      '[role="listitem"]',
-      '[data-testid="conversation-panel-messages"] > div > div',
-      '[aria-label*="Message list"] [role="listitem"]',
-      '.message-in, .message-out',
-    ];
-    let rows = [];
-    for (const sel of rowSelectors) {
-      try {
-        const found = Array.from(main.querySelectorAll(sel));
-        if (found.length > 0) {
-          console.log('[ICQ msg] matched selector:', sel, 'count:', found.length);
-          rows = found;
-          break;
-        }
-      } catch(_) {}
-    }
-
-    if (!rows.length) {
-      // Last resort: find anything in main with a selectable-text span
-      rows = Array.from(main.querySelectorAll('*')).filter(el =>
-        el.querySelector && el.querySelector('span.selectable-text')
-      ).slice(0, 100);
-      console.log('[ICQ msg] fallback: found', rows.length, 'elements with selectable-text');
-    }
-
-    rows.forEach((row, idx) => {
-      // ── Text: try many approaches ──
-      const textEl =
-        row.querySelector('[data-testid="msg-text"]') ||
-        row.querySelector('span.selectable-text.copyable-text') ||
-        row.querySelector('span.selectable-text') ||
-        row.querySelector('[class*="selectable"]') ||
-        row.querySelector('[class*="message-text"]');
-      const text = (textEl?.innerText || textEl?.textContent || '').trim();
-
-      // ── Media labels ──
-      const hasImg   = !!row.querySelector('img[src*="blob:"]');
-      const hasAudio = !!row.querySelector('audio, [data-testid*="audio"]');
-      const hasVideo = !!row.querySelector('video, [data-testid*="video"]');
-      const hasStick = !!row.querySelector('[data-testid*="sticker"]');
-
-      const displayText = text
-        || (hasStick ? '🎭 Sticker' : hasImg ? '📷 Photo' : hasAudio ? '🎵 Audio' : hasVideo ? '🎬 Video' : '');
-      if (!displayText) return;
-
-      // ── Outgoing? ──
-      const isOut = !!(
-        row.querySelector('[data-testid="msg-dbl-check"]') ||
-        row.querySelector('[data-testid="msg-check"]') ||
-        row.querySelector('[data-icon="msg-dbl-check"]') ||
-        row.querySelector('[data-icon="msg-check"]') ||
-        (row.className && (row.className.includes('message-out') || row.className.includes('outgoing')))
-      );
-
-      // ── Time ──
-      const timeEl = row.querySelector('[data-testid="msg-time"]') ||
-                     row.querySelector('[class*="timestamp"]') ||
-                     row.querySelector('span[dir="auto"] > span');
-      const time = (timeEl?.textContent || '').trim().slice(0, 10);
-
-      // ── Sender ──
-      const senderEl = row.querySelector('[data-testid="author"]') ||
-                       row.querySelector('[aria-label*="said"]');
-      const sender = (senderEl?.textContent || '').trim();
-
-      // ── Stable ID ──
-      const id = row.getAttribute('data-id') ||
-                 row.getAttribute('data-key-id') ||
-                 (idx + ':' + displayText.slice(0,20) + time);
-
-      messages.push({ id, text: displayText, isOut, time, sender });
-    });
-
-    console.log('[ICQ msg] rows:', rows.length, 'messages extracted:', messages.length);
-    return { ok: true, messages };
-  } catch(e) {
-    console.log('[ICQ msg] error:', e.message);
-    return { ok: false, error: e.message };
-  }
-})()
-`;
-
-async function scrapeMessages() {
+// ── Screenshot + text extraction ──────────────────────────────────────────────
+async function captureAndExtract() {
   if (!waWindow || waWindow.isDestroyed()) return;
   if (!icqWindow || icqWindow.isDestroyed()) return;
   try {
-    const data = await waWindow.webContents.executeJavaScript(MESSAGE_SCRAPER);
-    if (!data?.ok) { console.error('[ICQ] msg scraper error:', data?.error); return; }
-    icqWindow.webContents.send('wa-messages', data.messages || []);
-  } catch (e) { console.error('[ICQ] scrapeMessages error:', e.message); }
+    // 1. Try to extract structured message text first
+    const extracted = await waWindow.webContents.executeJavaScript(MESSAGE_EXTRACTOR);
+    if (extracted?.ok && extracted.messages?.length > 0) {
+      console.log('[ICQ] text extracted via', extracted.method, '—', extracted.messages.length, 'messages');
+      icqWindow.webContents.send('wa-messages', extracted.messages);
+      return; // no screenshot needed
+    }
+
+    // 2. Fallback: capturePage screenshot of #main panel
+    const rect = await waWindow.webContents.executeJavaScript(`
+      (function(){
+        const m = document.getElementById('main') ||
+                  document.querySelector('[data-testid="conversation-panel"]');
+        if (!m) return null;
+        const r = m.getBoundingClientRect();
+        if (r.width < 10 || r.height < 10) return null;
+        return { x: Math.round(r.x), y: Math.round(r.y),
+                 width: Math.round(r.width), height: Math.round(r.height) };
+      })()`);
+
+    let img;
+    if (rect) {
+      img = await waWindow.webContents.capturePage(rect);
+    } else {
+      console.log('[ICQ] #main not found — capturing full window');
+      img = await waWindow.webContents.capturePage();
+    }
+    if (!img || img.isEmpty()) { console.log('[ICQ] empty screenshot'); return; }
+
+    const sz      = img.getSize();
+    const resized = img.resize({ width: Math.min(sz.width, 900), quality: 'good' });
+    const b64     = resized.toPNG().toString('base64');
+    icqWindow.webContents.send('wa-chat-img', 'data:image/png;base64,' + b64);
+  } catch (e) { console.error('[ICQ] captureAndExtract error:', e.message); }
 }
 
-function startMsgLoop() {
-  scrapeMessages();
-  if (msgTimer) return;
-  msgTimer = setInterval(scrapeMessages, 1500);
+function startCaptureLoop() {
+  captureAndExtract();
+  if (screenTimer) return;
+  screenTimer = setInterval(captureAndExtract, 2000);
 }
 
-function stopMsgLoop() {
-  if (msgTimer) { clearInterval(msgTimer); msgTimer = null; }
+function stopCaptureLoop() {
+  if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
 }
 
-// ── WhatsApp window — shown but OFF-SCREEN ────────────────────────────────────
+// ── Off-screen position ───────────────────────────────────────────────────────
 function getOffscreenPos() {
-  // Position waWindow just to the right of the primary display
   try {
     const d = screen.getPrimaryDisplay();
     return { x: d.bounds.x + d.bounds.width + 50, y: d.bounds.y };
-  } catch (_) {
-    return { x: 1500, y: 0 };
-  }
+  } catch (_) { return { x: 1500, y: 0 }; }
 }
 
+// ── WhatsApp window — visible but off-screen ──────────────────────────────────
 function createWaWindow() {
   try {
     const waSess = session.fromPartition('persist:whatsapp');
@@ -294,14 +236,11 @@ function createWaWindow() {
   } catch (e) { console.error('[ICQ] wa session patch error:', e.message); }
 
   const pos = getOffscreenPos();
-  console.log('[ICQ] waWindow off-screen position:', pos);
-
   waWindow = new BrowserWindow({
     width: 1280, height: 900,
-    x: pos.x, y: pos.y,    // positioned off-screen (right of display)
-    show: true,             // SHOWN → full rendering, virtual scroll works
-    skipTaskbar: true,      // don't appear in macOS Dock / Windows taskbar
-    frame: true,
+    x: pos.x, y: pos.y,
+    show: true,
+    skipTaskbar: true,
     webPreferences: {
       contextIsolation:     false,
       nodeIntegration:      false,
@@ -322,9 +261,8 @@ function createWaWindow() {
   const onLoaded = () => {
     if (loaded) return;
     loaded = true;
-    console.log('[ICQ] WA loaded — starting scrape in 5s');
+    console.log('[ICQ] WA loaded');
 
-    // Nudge virtual scroll at 4s (window is visible so this always works)
     setTimeout(async () => {
       try {
         await waWindow.webContents.executeJavaScript(`
@@ -334,20 +272,17 @@ function createWaWindow() {
               .map(s => document.querySelector(s)).filter(Boolean)
               .forEach(el => {
                 el.scrollTop = 1;
-                el.dispatchEvent(new Event('scroll', {bubbles:true}));
+                el.dispatchEvent(new Event('scroll',{bubbles:true}));
                 el.scrollTop = 0;
-                el.dispatchEvent(new Event('scroll', {bubbles:true}));
+                el.dispatchEvent(new Event('scroll',{bubbles:true}));
               });
           })()`);
-      } catch(e) { console.error('[ICQ] nudge error:', e.message); }
+      } catch(e) {}
     }, 4000);
 
     setTimeout(startContactLoop, 5000);
     setTimeout(() => {
-      if (!statusSent) {
-        console.log('[ICQ] No contacts after 30s — prompting sign-in');
-        icqWindow?.webContents.send('wa-status', { status: 'needsLogin' });
-      }
+      if (!statusSent) icqWindow?.webContents.send('wa-status', { status: 'needsLogin' });
     }, 30000);
   };
 
@@ -356,15 +291,15 @@ function createWaWindow() {
   waWindow.on('closed', () => { waWindow = null; });
 }
 
-// ── IPC: bring WA on-screen for QR sign-in ───────────────────────────────────
+// ── IPC: show WA for QR sign-in ───────────────────────────────────────────────
 ipcMain.on('wa-show', () => {
   if (!waWindow || waWindow.isDestroyed()) return;
-  // Move to center of primary display
   try {
     const d = screen.getPrimaryDisplay();
-    const x = d.bounds.x + Math.floor((d.bounds.width  - 1280) / 2);
-    const y = d.bounds.y + Math.floor((d.bounds.height - 900)  / 2);
-    waWindow.setPosition(x, y);
+    waWindow.setPosition(
+      d.bounds.x + Math.floor((d.bounds.width  - 1280) / 2),
+      d.bounds.y + Math.floor((d.bounds.height - 900)  / 2)
+    );
   } catch (_) { waWindow.center(); }
   waWindow.focus();
 
@@ -376,10 +311,8 @@ ipcMain.on('wa-show', () => {
       );
       if (ok) {
         clearInterval(poll);
-        // Move back off-screen after successful login
         const pos = getOffscreenPos();
         waWindow.setPosition(pos.x, pos.y);
-        waWindow.blur();
         statusSent = false;
         startContactLoop();
       }
@@ -387,16 +320,14 @@ ipcMain.on('wa-show', () => {
   }, 3000);
 });
 
-// (CDP removed — debugger.attach corrupts WA's JS context)
-
 // ── IPC: click a contact ──────────────────────────────────────────────────────
 ipcMain.on('wa-click-contact', async (e, index) => {
   if (!waWindow || waWindow.isDestroyed()) return;
   const i = index | 0;
-  stopMsgLoop();
+  stopCaptureLoop();
   try {
-    // Get cell center (viewport-relative CSS pixels)
-    const info = await waWindow.webContents.executeJavaScript(`
+    // JS element.click() works for opening chats (React handles it via event bubbling)
+    const result = await waWindow.webContents.executeJavaScript(`
       (function(){
         const sels = [
           '[data-testid="cell-frame-container"]',
@@ -411,45 +342,14 @@ ipcMain.on('wa-click-contact', async (e, index) => {
           if (cells.length > 0) break;
         }
         const cell = cells[${i}];
-        if (!cell) return null;
-        const r   = cell.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        return {
-          // sendInputEvent needs physical pixels on macOS Retina
-          x: Math.round((r.left + r.width  / 2) * dpr),
-          y: Math.round((r.top  + r.height / 2) * dpr),
-          name: cell.textContent?.slice(0, 40) || '',
-          total: cells.length,
-        };
+        if (!cell) return { ok: false, total: cells.length };
+        cell.click();
+        return { ok: true, name: cell.textContent?.slice(0,40)||'', total: cells.length };
       })()`);
+    console.log('[ICQ] click contact', i, JSON.stringify(result));
 
-    if (!info) {
-      console.warn('[ICQ] cell', i, 'not found in WA DOM');
-      setTimeout(startMsgLoop, 2000);
-      return;
-    }
-    console.log('[ICQ] clicking contact', i, JSON.stringify(info));
-
-    // ── Move WA window BEHIND the ICQ window so sendInputEvent works
-    //    (macOS drops input events for fully-offscreen windows)
-    //    ICQ is alwaysOnTop, so WA stays invisible to the user. ──
-    if (icqWindow && !icqWindow.isDestroyed()) {
-      const b = icqWindow.getBounds();
-      waWindow.setPosition(b.x, b.y);
-    }
-    await new Promise(r => setTimeout(r, 80)); // let compositor settle
-
-    waWindow.webContents.sendInputEvent({ type: 'mouseMove',  x: info.x, y: info.y });
-    waWindow.webContents.sendInputEvent({ type: 'mouseDown',  x: info.x, y: info.y, button: 'left', clickCount: 1 });
-    await new Promise(r => setTimeout(r, 60));
-    waWindow.webContents.sendInputEvent({ type: 'mouseUp',    x: info.x, y: info.y, button: 'left', clickCount: 1 });
-
-    // Give WA time to open the chat, then return it off-screen
-    await new Promise(r => setTimeout(r, 700));
-    const pos = getOffscreenPos();
-    waWindow.setPosition(pos.x, pos.y);
-
-    setTimeout(startMsgLoop, 500);
+    // Wait for WA to open the chat, then start capture+extraction loop
+    setTimeout(startCaptureLoop, 1500);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
 
@@ -486,18 +386,18 @@ ipcMain.on('win-maximize', () => {
 });
 ipcMain.on('win-close', () => app.quit());
 
-// ── ICQ visible window ────────────────────────────────────────────────────────
+// ── ICQ window ────────────────────────────────────────────────────────────────
 function createIcqWindow() {
   icqWindow = new BrowserWindow({
     width: 1100, height: 780,
     minWidth: 800, minHeight: 580,
     title: 'ICQ', frame: false,
-    alwaysOnTop: true,           // stays above WA window during click
+    alwaysOnTop: true,
     backgroundColor: '#C0C0C0', show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false,
+      nodeIntegration:  false,
     },
   });
   icqWindow.loadFile('app.html');
@@ -516,7 +416,6 @@ function createIcqWindow() {
       { label: 'Send WA off-screen', click: () => {
         const pos = getOffscreenPos();
         waWindow?.setPosition(pos.x, pos.y);
-        waWindow?.blur();
       }},
       { label: 'Reload WhatsApp', click: () => {
         statusSent = false;
