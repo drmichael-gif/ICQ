@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ICQ</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Tahoma', 'Segoe UI', sans-serif;
+      background: transparent;
+      display: flex; justify-content: center; align-items: center;
+      height: 100vh; overflow: hidden; -webkit-app-region: drag;
+    }
+    .splash {
+      width: 320px;
+      background: linear-gradient(180deg, #f5f5f0 0%, #ECE9D8 100%);
+      border: 2px outset #D4D0C8;
+      box-shadow: 4px 4px 20px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    .splash-titlebar {
+      background: linear-gradient(180deg, #0997FF 0%, #0053E0 8%, #0050DB 20%, #1870CD 50%, #2488E5 80%, #0058D6 92%, #0048B5 100%);
+      height: 26px; display: flex; align-items: center; padding: 0 6px;
+      border-bottom: 1px solid #003CC5;
+    }
+    .splash-titlebar span {
+      color: #fff; font-size: 12px; font-weight: bold;
+      text-shadow: 1px 1px 1px rgba(0,0,0,0.4);
+    }
+    .splash-green {
+      height: 24px;
+      background: linear-gradient(180deg, #8BD48A 0%, #5DC05B 30%, #3AAF38 60%, #2DA02B 100%);
+      border-bottom: 1px solid #1A8018;
+    }
+    .splash-body { padding: 30px 30px 20px; text-align: center; }
+    .flower-logo { width: 130px; height: 130px; margin: 0 auto 16px; animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+    .splash-title { font-size: 36px; font-weight: bold; color: #222; margin-bottom: 2px; letter-spacing: 1px; }
+    .splash-subtitle { font-size: 12px; color: #888; margin-bottom: 24px; }
+    .splash-divider { height: 1px; background: linear-gradient(90deg, transparent, #ACA899, transparent); margin: 12px 0; }
+    .splash-status { font-size: 12px; color: #555; margin-bottom: 12px; }
+    .progress-box {
+      width: 100%; height: 18px; background: #fff;
+      border: 2px inset; border-color: #7F9DB9 #D4D0C8 #D4D0C8 #7F9DB9;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(180deg, #50D846 0%, #3CC832 50%, #2CA822 100%);
+      animation: loading 2.5s ease-in-out forwards;
+    }
+    @keyframes loading { 0%{width:0} 20%{width:25%} 40%{width:45%} 60%{width:65%} 80%{width:85%} 100%{width:100%} }
+    .splash-version { font-size: 10px; color: #aaa; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="splash">
+    <div class="splash-titlebar"><span>ICQ</span></div>
+    <div class="splash-green"></div>
+    <div class="splash-body">
+      <div class="flower-logo">
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#3CC832" stroke="#1A1A1A" stroke-width="2.5"/>
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#50D846" stroke="#1A1A1A" stroke-width="2.5" transform="rotate(45 50 50)"/>
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#E81919" stroke="#1A1A1A" stroke-width="2.5" transform="rotate(90 50 50)"/>
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#3CC832" stroke="#1A1A1A" stroke-width="2.5" transform="rotate(135 50 50)"/>
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#50D846" stroke="#1A1A1A" stroke-width="2.5" transform="rotate(180 50 50)"/>
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#3CC832" stroke="#1A1A1A" stroke-width="2.5" transform="rotate(225 50 50)"/>
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#50D846" stroke="#1A1A1A" stroke-width="2.5" transform="rotate(270 50 50)"/>
+          <ellipse cx="50" cy="23" rx="13" ry="19" fill="#3CC832" stroke="#1A1A1A" stroke-width="2.5" transform="rotate(315 50 50)"/>
+          <circle cx="50" cy="50" r="12" fill="#FFD900" stroke="#1A1A1A" stroke-width="2.5"/>
+        </svg>
+      </div>
+      <div class="splash-title">icq</div>
+      <div class="splash-subtitle">I Seek You</div>
+      <div class="splash-divider"></div>
+      <div class="splash-status" id="status-text">Connecting...</div>
+      <div class="progress-box"><div class="progress-fill"></div></div>
+      <div class="splash-version">ICQ 2001b</div>
+    </div>
+  </div>
+  <script>
+    const msgs = ['Connecting...','Loading contact list...','Syncing messages...','Almost ready...'];
+    let i = 0;
+    setInterval(() => { i = Math.min(i+1, msgs.length-1); document.getElementById('status-text').textContent = msgs[i]; }, 600);
+  </script>
+</body>
+</html>
