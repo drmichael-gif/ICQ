@@ -14,7 +14,7 @@ const path = require('path');
 let icqWindow    = null;
 let waWindow     = null;
 let contactTimer = null;
-let screenTimer  = null;
+let msgTimer     = null;
 let statusSent   = false;
 
 const WA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -135,51 +135,87 @@ function startContactLoop() {
   contactTimer = setInterval(scrapeContacts, 2000);
 }
 
-// ── Screenshot capture (messages) ─────────────────────────────────────────────
-async function captureChat() {
+// ── Message scraper ───────────────────────────────────────────────────────────
+const MESSAGE_SCRAPER = `
+(function() {
+  try {
+    const main = document.getElementById('main');
+    if (!main) return { ok: false, error: 'no #main' };
+
+    const messages = [];
+
+    // Find message containers — try several selectors
+    let rows = Array.from(main.querySelectorAll('[data-testid="msg-container"]'));
+    if (!rows.length) rows = Array.from(main.querySelectorAll('[data-id]'));
+    if (!rows.length) rows = Array.from(main.querySelectorAll('[role="row"]'));
+
+    rows.forEach(row => {
+      // ── Text ──
+      const textEl =
+        row.querySelector('[data-testid="msg-text"]') ||
+        row.querySelector('span.selectable-text') ||
+        row.querySelector('[class*="selectable"] span');
+      const text = (textEl?.innerText || textEl?.textContent || '').trim();
+
+      // ── Media labels ──
+      const hasImg   = !!row.querySelector('img[src*="blob:"]');
+      const hasAudio = !!row.querySelector('audio, [data-testid*="audio"]');
+      const hasVideo = !!row.querySelector('video, [data-testid*="video"]');
+      const hasStick = !!row.querySelector('[data-testid*="sticker"]');
+
+      const displayText = text ||
+        (hasStick ? '🎭 Sticker' : hasImg ? '📷 Photo' : hasAudio ? '🎵 Audio' : hasVideo ? '🎬 Video' : '');
+      if (!displayText) return;
+
+      // ── Outgoing? (delivery check icons only appear on our own messages) ──
+      const isOut = !!(
+        row.querySelector('[data-testid="msg-dbl-check"]') ||
+        row.querySelector('[data-testid="msg-check"]') ||
+        row.querySelector('[data-testid="msg-time-read"]') ||
+        row.querySelector('[data-icon="msg-dbl-check"]') ||
+        row.querySelector('[data-icon="msg-check"]')
+      );
+
+      // ── Time ──
+      const timeEl = row.querySelector('[data-testid="msg-time"]');
+      const time   = (timeEl?.textContent || '').trim();
+
+      // ── Sender (group chats) ──
+      const senderEl = row.querySelector('[data-testid="author"]');
+      const sender   = (senderEl?.textContent || '').trim();
+
+      // ── Stable ID for deduplication ──
+      const id = row.getAttribute('data-id') ||
+                 row.getAttribute('data-key-id') ||
+                 (displayText + time + (isOut ? 'o' : 'i')).replace(/\\W/g, '').slice(0, 40);
+
+      messages.push({ id, text: displayText, isOut, time, sender });
+    });
+
+    console.log('[ICQ msg scraper] main found, rows:', rows.length, 'messages:', messages.length);
+    return { ok: true, messages };
+  } catch(e) { return { ok: false, error: e.message }; }
+})()
+`;
+
+async function scrapeMessages() {
   if (!waWindow || waWindow.isDestroyed()) return;
   if (!icqWindow || icqWindow.isDestroyed()) return;
   try {
-    // Get #main position, fall back to right 66% of window if missing
-    const info = await waWindow.webContents.executeJavaScript(`
-      (function(){
-        const m = document.getElementById('main');
-        const ws = { w: window.innerWidth, h: window.innerHeight };
-        if (!m) return { found: false, ws };
-        const r = m.getBoundingClientRect();
-        return { found: true, ws,
-                 x: Math.round(r.x), y: Math.round(r.y),
-                 width: Math.round(r.width), height: Math.round(r.height) };
-      })()`);
-
-    console.log('[ICQ] captureChat info:', JSON.stringify(info));
-
-    let img;
-    if (info?.found && info.width > 10 && info.height > 10) {
-      // Capture just the #main panel
-      img = await waWindow.webContents.capturePage({
-        x: info.x, y: info.y, width: info.width, height: info.height
-      });
-    } else {
-      // Fallback: capture full window (shows whole WA interface — still useful)
-      console.log('[ICQ] #main not ready, capturing full window');
-      img = await waWindow.webContents.capturePage();
-    }
-
-    if (!img || img.isEmpty()) {
-      console.log('[ICQ] capturePage returned empty image');
-      return;
-    }
-    const sz      = img.getSize();
-    const resized = img.resize({ width: Math.min(sz.width, 900), quality: 'good' });
-    icqWindow.webContents.send('wa-chat-img', 'data:image/png;base64,' + resized.toPNG().toString('base64'));
-  } catch (e) { console.error('[ICQ] captureChat error:', e.message, e.stack); }
+    const data = await waWindow.webContents.executeJavaScript(MESSAGE_SCRAPER);
+    if (!data?.ok) { console.error('[ICQ] msg scraper error:', data?.error); return; }
+    icqWindow.webContents.send('wa-messages', data.messages || []);
+  } catch (e) { console.error('[ICQ] scrapeMessages error:', e.message); }
 }
 
-function startCapture() {
-  captureChat();
-  if (screenTimer) return;
-  screenTimer = setInterval(captureChat, 1500);
+function startMsgLoop() {
+  scrapeMessages();
+  if (msgTimer) return;
+  msgTimer = setInterval(scrapeMessages, 1500);
+}
+
+function stopMsgLoop() {
+  if (msgTimer) { clearInterval(msgTimer); msgTimer = null; }
 }
 
 // ── WhatsApp window — shown but OFF-SCREEN ────────────────────────────────────
@@ -318,9 +354,9 @@ ipcMain.on('wa-click-contact', async (e, index) => {
         return { ok: true, total: cells.length, name: cell.textContent?.slice(0,30) };
       })()`);
     console.log('[ICQ] wa-click-contact index:', i, 'result:', JSON.stringify(result));
-    // Start capture loop — first shot at 800ms, then every 1.5s
-    setTimeout(captureChat, 800);
-    setTimeout(startCapture, 1500);
+    // Stop any previous message loop, start fresh for new chat
+    stopMsgLoop();
+    setTimeout(startMsgLoop, 1000);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
 

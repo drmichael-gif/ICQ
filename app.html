@@ -4,16 +4,13 @@
 <meta charset="UTF-8">
 <title>ICQ</title>
 <style>
-/* ════════════════════════════════════════════════════════════
-   ICQ CLASSIC — app.html
+/* ═══════════════════════════════════════════════════════════
+   ICQ CLASSIC — native chat bubbles, no screenshots
    Layout: [Chat window LEFT 70%] [Contact List RIGHT ~270px]
-   All colors & fonts explicit — no inheritance surprises.
-   ════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════ */
 
-/* ── Reset ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── Win98 palette ── */
 html, body {
   width: 100%; height: 100%;
   background: #C0C0C0;
@@ -24,16 +21,12 @@ html, body {
   -webkit-font-smoothing: none;
 }
 
-/* ════ OUTER TITLE BAR ════════════════════════════════════════ */
+/* ── Outer title bar ── */
 #outer-tb {
   height: 20px;
   background: linear-gradient(90deg, #000080 0%, #1084D0 100%);
-  display: flex;
-  align-items: center;
-  padding: 0 3px;
-  gap: 4px;
-  -webkit-app-region: drag;
-  flex-shrink: 0;
+  display: flex; align-items: center; padding: 0 3px; gap: 4px;
+  -webkit-app-region: drag; flex-shrink: 0;
 }
 #outer-tb-title { flex: 1; color: #FFFFFF; font-size: 11px; font-weight: bold; }
 #outer-tb-btns  { display: flex; gap: 2px; -webkit-app-region: no-drag; }
@@ -41,33 +34,25 @@ html, body {
   width: 16px; height: 14px;
   background: #C0C0C0;
   border: 1px solid; border-color: #FFFFFF #808080 #808080 #FFFFFF;
-  color: #000000;
-  font-size: 7px; font-weight: bold;
+  color: #000000; font-size: 7px; font-weight: bold;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; line-height: 1;
 }
 .wbtn:active { border-color: #808080 #FFFFFF #FFFFFF #808080; }
 
-/* ════ MAIN BODY ══════════════════════════════════════════════ */
+/* ── Main body ── */
 #body {
-  display: flex;
-  height: calc(100vh - 20px);
-  padding: 3px;
-  gap: 3px;
-  background: #C0C0C0;
+  display: flex; height: calc(100vh - 20px);
+  padding: 3px; gap: 3px; background: #C0C0C0;
 }
 
-/* ════ LEFT: CHAT WINDOW ══════════════════════════════════════ */
+/* ════ LEFT: CHAT WINDOW ════════════════════════════════════ */
 #chat {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
   border: 2px solid; border-color: #808080 #FFFFFF #FFFFFF #808080;
   background: #C0C0C0;
 }
 
-/* Chat window inner title bar (plain gray, like reference) */
 #chat-tb {
   height: 20px; flex-shrink: 0;
   background: #C0C0C0;
@@ -75,84 +60,107 @@ html, body {
   display: flex; align-items: center; padding: 0 6px;
 }
 #chat-tb-title {
-  flex: 1;
-  font-size: 11px; font-weight: normal;
-  color: #000000;
-  text-align: center;
+  flex: 1; font-size: 11px; font-weight: normal;
+  color: #000000; text-align: center;
 }
 #chat-tb-btns { display: flex; gap: 1px; }
 
-/* User Details fieldset */
 fieldset#udet {
-  margin: 3px 5px 2px;
-  padding: 1px 8px 3px;
-  border: 1px solid #808080;
-  background: #C0C0C0;
-  flex-shrink: 0;
+  margin: 3px 5px 2px; padding: 1px 8px 3px;
+  border: 1px solid #808080; background: #C0C0C0; flex-shrink: 0;
 }
 fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
-#udet-row {
-  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
-  font-size: 11px; color: #000000;
-}
-.udlbl { font-weight: bold; color: #000000; }
+#udet-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; }
+.udlbl { font-weight: bold; }
 
-/* Message log — now shows WA screenshot */
+/* ── Message log (chat bubbles live here) ── */
 #log {
   flex: 1; min-height: 0;
   margin: 0 5px;
   border: 2px solid; border-color: #808080 #FFFFFF #FFFFFF #808080;
   background: #FFFFFF;
-  overflow-y: auto;
-  padding: 0;
+  overflow-y: auto; overflow-x: hidden;
   position: relative;
 }
-/* Screenshot image fills the whole log area */
-#chat-img {
-  display: none;
-  width: 100%;
-  height: auto;
-  min-height: 100%;
-  object-fit: cover;
-  vertical-align: top;
-  border: 0;
-}
 
-/* Welcome / status area inside log */
+/* ── Welcome / waiting state ── */
 #welcome {
   height: 100%; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 8px;
+  align-items: center; justify-content: center; gap: 8px; padding: 20px;
 }
 #welcome .ico { font-size: 36px; }
 #welcome .ttl { font-size: 14px; font-weight: bold; color: #000000; }
 #welcome .sub { font-size: 11px; color: #808080; text-align: center; }
 
-/* Progress/send bar */
+/* ── Message bubbles ── */
+#msg-log { display: none; padding: 5px 6px; }
+
+.msg-wrap { margin: 4px 0; display: flex; flex-direction: column; }
+.msg-wrap.out { align-items: flex-end; }
+.msg-wrap.in  { align-items: flex-start; }
+
+.msg-sender {
+  font-size: 10px; font-weight: bold;
+  color: #000080; margin-bottom: 2px; padding-left: 2px;
+}
+
+.msg-bubble {
+  max-width: 80%;
+  padding: 4px 8px 16px 8px;
+  border: 1px solid;
+  position: relative;
+  font-size: 11px;
+  font-family: 'Tahoma', 'MS Sans Serif', 'Arial', sans-serif;
+  color: #000000;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+.msg-wrap.in  .msg-bubble {
+  background: #FFFFFF; border-color: #AAAAAA;
+  border-radius: 0 4px 4px 4px;
+}
+.msg-wrap.out .msg-bubble {
+  background: #E8FFE8; border-color: #88CC88;
+  border-radius: 4px 0 4px 4px;
+}
+
+.msg-time {
+  position: absolute; bottom: 2px; right: 5px;
+  font-size: 9px; color: #888888; white-space: nowrap;
+}
+
+/* ── Day separator ── */
+.day-sep {
+  text-align: center; margin: 8px 0; font-size: 10px; color: #808080;
+  border-top: 1px solid #D0D0D0; padding-top: 4px;
+}
+
+/* ── "Loading chat…" placeholder ── */
+#chat-loading {
+  display: none; padding: 10px;
+  color: #808080; font-size: 11px;
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* ── Send bar ── */
 #send-bar {
-  flex-shrink: 0;
-  display: flex; align-items: center; gap: 5px;
-  padding: 2px 5px;
-  background: #C0C0C0;
-  border-top: 1px solid #FFFFFF;
+  flex-shrink: 0; display: flex; align-items: center; gap: 5px;
+  padding: 2px 5px; background: #C0C0C0; border-top: 1px solid #FFFFFF;
 }
 .sicon {
-  width: 20px; height: 18px;
-  background: #C0C0C0;
+  width: 20px; height: 18px; background: #C0C0C0;
   border: 1px solid; border-color: #FFFFFF #808080 #808080 #FFFFFF;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; font-size: 9px; color: #000000;
 }
-#mlen-lbl { font-size: 10px; color: #808080; }
-#mlen-bar {
-  width: 60px; height: 10px;
-  border: 1px solid; border-color: #808080 #FFFFFF #FFFFFF #808080;
-  background: #FFFFFF;
-}
+#mlen-lbl  { font-size: 10px; color: #808080; }
+#mlen-bar  { width: 60px; height: 10px; border: 1px solid; border-color: #808080 #FFFFFF #FFFFFF #808080; background: #FFFFFF; }
 #mlen-fill { height: 100%; background: #FFFF00; width: 0; }
-#mlen-cnt { font-size: 11px; font-weight: bold; color: #000000; }
-#btn-send {
-  margin-left: auto;
-  padding: 1px 14px;
+#mlen-cnt  { font-size: 11px; font-weight: bold; color: #000000; }
+#btn-send  {
+  margin-left: auto; padding: 1px 14px;
   font-size: 11px; font-weight: bold;
   font-family: 'Tahoma','MS Sans Serif','Arial',sans-serif;
   color: #000000; background: #C0C0C0; cursor: pointer;
@@ -160,30 +168,22 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
 }
 #btn-send:active { border-color: #808080 #FFFFFF #FFFFFF #808080; }
 
-/* Message input */
+/* ── Compose input ── */
 #input {
-  flex-shrink: 0;
-  margin: 2px 5px 4px;
-  height: 60px;
+  flex-shrink: 0; margin: 2px 5px 4px; height: 60px;
   border: 2px solid; border-color: #808080 #FFFFFF #FFFFFF #808080;
   padding: 3px 4px;
   font-family: 'Tahoma','MS Sans Serif','Arial',sans-serif;
-  font-size: 11px;
-  color: #000000;
-  background: #FFFFFF;
-  resize: none; outline: none;
-  user-select: text;
+  font-size: 11px; color: #000000; background: #FFFFFF;
+  resize: none; outline: none; user-select: text;
 }
 
 /* ════ RIGHT: CONTACT LIST ════════════════════════════════════ */
 #cl {
-  width: 265px; flex-shrink: 0;
-  display: flex; flex-direction: column;
+  width: 265px; flex-shrink: 0; display: flex; flex-direction: column;
   border: 2px solid; border-color: #808080 #FFFFFF #FFFFFF #808080;
   background: #C0C0C0;
 }
-
-/* CL title bar */
 #cl-tb {
   height: 20px; flex-shrink: 0;
   background: linear-gradient(90deg, #000080 0%, #1084D0 100%);
@@ -191,75 +191,53 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
 }
 #cl-tb-title { flex: 1; color: #FFFFFF; font-size: 11px; font-weight: bold; }
 #cl-tb-btns  { display: flex; gap: 1px; }
-
-/* CL icon row */
 #cl-icons {
-  height: 24px; flex-shrink: 0;
-  display: flex; align-items: center; gap: 2px;
-  padding: 2px 3px;
-  border-bottom: 1px solid #808080;
+  height: 24px; flex-shrink: 0; display: flex; align-items: center;
+  gap: 2px; padding: 2px 3px; border-bottom: 1px solid #808080;
 }
 .clibtn {
-  height: 20px;
-  background: #C0C0C0;
+  height: 20px; background: #C0C0C0;
   border: 1px solid; border-color: #FFFFFF #808080 #808080 #FFFFFF;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; color: #000000; font-size: 9px;
-  padding: 0 4px;
+  cursor: pointer; color: #000000; font-size: 9px; padding: 0 4px;
 }
 #icq-word { font-size: 11px; font-weight: bold; font-style: italic; }
-
-/* CL scroll area */
 #cl-scroll {
-  flex: 1; min-height: 0; overflow-y: auto;
-  background: #FFFFFF;
+  flex: 1; min-height: 0; overflow-y: auto; background: #FFFFFF;
   border: 2px solid; border-color: #808080 #FFFFFF #FFFFFF #808080;
   margin: 2px 3px;
 }
 .cl-sect {
-  font-size: 10px; color: #808080;
-  background: #FFFFFF;
-  padding: 3px 6px 1px;
-  border-bottom: 1px solid #D0D0D0;
+  font-size: 10px; color: #808080; background: #FFFFFF;
+  padding: 3px 6px 1px; border-bottom: 1px solid #D0D0D0;
   user-select: none;
 }
 .cl-contact {
   display: flex; align-items: center; gap: 3px;
-  padding: 2px 8px;
-  cursor: pointer; background: #FFFFFF;
-  border-bottom: 1px solid #F8F8F8;
-  min-height: 18px;
+  padding: 2px 8px; cursor: pointer; background: #FFFFFF;
+  border-bottom: 1px solid #F8F8F8; min-height: 18px;
 }
 .cl-contact:hover  { background: #D6EEDA; }
 .cl-contact.active { background: #000080; }
 .cl-contact.active .cname { color: #FFFFFF !important; }
 .cl-flower { font-size: 11px; flex-shrink: 0; line-height: 1; }
 .cname { font-size: 11px; color: #006600; font-weight: bold; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cname.offline { color: #555555 !important; font-weight: normal; }
-.cunread {
-  font-size: 9px; font-weight: bold; color: #FFFFFF;
-  background: #CC0000; padding: 0 3px; min-width: 14px; text-align: center;
-}
-
-/* CL bottom buttons */
+.cunread { font-size: 9px; font-weight: bold; color: #FFFFFF; background: #CC0000; padding: 0 3px; min-width: 14px; text-align: center; }
 #cl-btm {
-  flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 1px;
-  padding: 2px 3px 3px;
-  border-top: 1px solid #FFFFFF;
+  flex-shrink: 0; display: flex; flex-direction: column; gap: 1px;
+  padding: 2px 3px 3px; border-top: 1px solid #FFFFFF;
 }
 .clbtn {
-  display: flex; align-items: center; gap: 4px;
-  padding: 2px 8px; font-size: 11px; font-weight: bold;
+  display: flex; align-items: center; gap: 4px; padding: 2px 8px;
+  font-size: 11px; font-weight: bold;
   font-family: 'Tahoma','MS Sans Serif','Arial',sans-serif;
   color: #000000; background: #C0C0C0; cursor: pointer;
   border: 1px solid; border-color: #FFFFFF #808080 #808080 #FFFFFF;
 }
 .clbtn:active { border-color: #808080 #FFFFFF #FFFFFF #808080; }
 #cl-avail {
-  display: flex; align-items: center; gap: 4px;
-  padding: 2px 8px; font-size: 11px; font-weight: bold;
-  color: #000000; background: #C0C0C0;
+  display: flex; align-items: center; gap: 4px; padding: 2px 8px;
+  font-size: 11px; font-weight: bold; color: #000000; background: #C0C0C0;
   border: 1px solid; border-color: #FFFFFF #808080 #808080 #FFFFFF;
 }
 
@@ -272,7 +250,6 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
 </head>
 <body>
 
-<!-- Outer Win98 title bar -->
 <div id="outer-tb">
   <span style="font-size:12px">🌸</span>
   <span id="outer-tb-title">ICQ Messenger</span>
@@ -285,38 +262,35 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
 
 <div id="body">
 
-  <!-- ════ LEFT: CHAT WINDOW ════ -->
+  <!-- ════ LEFT: CHAT ════ -->
   <div id="chat">
 
-    <!-- Chat inner title (plain gray like reference) -->
     <div id="chat-tb">
       <div id="chat-tb-title">— Select a contact —</div>
       <div id="chat-tb-btns">
-        <div class="wbtn">_</div>
-        <div class="wbtn">□</div>
+        <div class="wbtn">_</div><div class="wbtn">□</div>
         <div class="wbtn" style="font-size:8px">✕</div>
       </div>
     </div>
 
-    <!-- User Details fieldset -->
     <fieldset id="udet">
       <legend>User Details</legend>
       <div id="udet-row">
         <span class="udlbl">Nick:</span>
-        <span id="ud-nick" style="color:#000000">—</span>
+        <span id="ud-nick">—</span>
         &nbsp;
         <span class="udlbl">ICQ#:</span>
-        <span style="color:#000000">692648192</span>
+        <span>692648192</span>
         &nbsp;
         <span class="udlbl">Status:</span>
         <span>🌸</span>
       </div>
     </fieldset>
 
-    <!-- Message log — shows WA screenshot when chat is open -->
+    <!-- Message area -->
     <div id="log">
-      <!-- Welcome / connecting state -->
-      <div id="welcome" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px">
+      <!-- Welcome state -->
+      <div id="welcome">
         <div class="ico">🌸</div>
         <div class="ttl">ICQ</div>
         <div class="sub" id="status-lbl">Connecting to WhatsApp…</div>
@@ -326,39 +300,36 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
           </button>
         </div>
       </div>
-      <!-- Live screenshot of WhatsApp chat panel -->
-      <img id="chat-img" alt="chat" />
+      <!-- Loading placeholder -->
+      <div id="chat-loading">Loading chat…</div>
+      <!-- Native message bubbles -->
+      <div id="msg-log"></div>
     </div>
 
-    <!-- Send bar -->
     <div id="send-bar">
-      <div class="sicon" title="Attach">📎</div>
-      <div class="sicon" title="Emoticons">😊</div>
-      <div class="sicon" title="Font">𝗔</div>
+      <div class="sicon">📎</div>
+      <div class="sicon">😊</div>
+      <div class="sicon">𝗔</div>
       <span id="mlen-lbl">Message Length</span>
       <div id="mlen-bar"><div id="mlen-fill"></div></div>
       <span id="mlen-cnt">0/1024</span>
       <button id="btn-send">Send</button>
     </div>
 
-    <!-- Compose input -->
     <textarea id="input" placeholder="Type a message…" maxlength="1024"></textarea>
 
   </div><!-- #chat -->
 
   <!-- ════ RIGHT: CONTACT LIST ════ -->
   <div id="cl">
-
     <div id="cl-tb">
       <span style="font-size:12px">🌸</span>
       <span id="cl-tb-title">22536582</span>
       <div id="cl-tb-btns">
-        <div class="wbtn">_</div>
-        <div class="wbtn">□</div>
+        <div class="wbtn">_</div><div class="wbtn">□</div>
         <div class="wbtn" style="font-size:8px">✕</div>
       </div>
     </div>
-
     <div id="cl-icons">
       <div class="clibtn" id="icq-word">ICQ</div>
       <div class="clibtn">🌸</div>
@@ -366,60 +337,50 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
       <div class="clibtn">ℹ</div>
       <div class="clibtn">🔍</div>
     </div>
-
     <div id="cl-scroll">
       <div class="cl-sect" id="cl-loading">── Loading ──</div>
     </div>
-
     <div id="cl-btm">
       <button class="clbtn">🖥 System</button>
       <button class="clbtn">🔍 Search/Add Users</button>
       <div id="cl-avail">🌸 Available <span style="margin-left:auto">▼</span></div>
     </div>
-
   </div><!-- #cl -->
 
 </div><!-- #body -->
 
 <script>
 'use strict';
-/* All text color is set in CSS — this JS only manages content/state */
-
 const $ = id => document.getElementById(id);
-const bridge = window.icq; // exposed by preload.js
+const bridge = window.icq;
 
-// ── State ──────────────────────────────────────────────────────────────────
-let contacts = [], chatName = '', selIdx = -1;
+// ── State ──────────────────────────────────────────────────────────────────────
+let contacts = [], selIdx = -1;
+let renderedIds = new Set();        // dedup rendered messages
 
-// ── Window controls ────────────────────────────────────────────────────────
+// ── Window controls ────────────────────────────────────────────────────────────
 $('btn-min').onclick   = () => bridge.minimize();
 $('btn-max').onclick   = () => bridge.maximize();
 $('btn-close').onclick = () => bridge.close();
 
-// ── Status from main ───────────────────────────────────────────────────────
+// ── WA status ─────────────────────────────────────────────────────────────────
 bridge.onStatus(d => {
-  const lbl = $('status-lbl');
-  const btn  = $('btn-signin');
   if (d.status === 'qr' || d.status === 'needsLogin') {
-    lbl.textContent = 'Not signed in to WhatsApp.';
-    btn.style.display = 'inline-block';
+    $('status-lbl').textContent = 'Not signed in to WhatsApp.';
+    $('btn-signin').style.display = 'inline-block';
   } else if (d.status === 'ready') {
-    lbl.textContent  = 'Select a contact to chat.';
-    btn.style.display = 'none';
+    $('status-lbl').textContent = 'Select a contact to chat.';
+    $('btn-signin').style.display = 'none';
   }
 });
-
-// ── Sign-in button (shows hidden WA window) ────────────────────────────────
 $('btn-signin').onclick = () => bridge.showWa();
 
-// ── Data from main (every 2s) ──────────────────────────────────────────────
+// ── Contact data ───────────────────────────────────────────────────────────────
 bridge.onData(d => {
   contacts = d.contacts || [];
-  chatName = d.chatName || '';
   renderCL();
 });
 
-// ── Render contact list ────────────────────────────────────────────────────
 function renderCL() {
   const scr = $('cl-scroll');
   if (!contacts.length) {
@@ -432,8 +393,7 @@ function renderCL() {
     const badge = c.unread ? `<span class="cunread">${esc(c.unread)}</span>` : '';
     h += `<div class="cl-contact${act}" data-i="${i}">
       <span class="cl-flower">🌸</span>
-      <span class="cname">${esc(c.name)}</span>
-      ${badge}
+      <span class="cname">${esc(c.name)}</span>${badge}
     </div>`;
   });
   scr.innerHTML = h;
@@ -442,87 +402,103 @@ function renderCL() {
   });
 }
 
-// ── Select contact ─────────────────────────────────────────────────────────
+// ── Select contact ─────────────────────────────────────────────────────────────
 function selectContact(i) {
   selIdx = i;
   const c = contacts[i];
   if (!c) return;
+
+  // Tell main.js to click this chat in WA
   bridge.clickContact(i);
 
-  // Update chat title & nick immediately
+  // Update UI immediately
   $('chat-tb-title').textContent = c.name + ' Message Dialog';
   $('ud-nick').textContent = c.name;
-  chatName = c.name;
 
-  // Hide welcome, clear old screenshot, show loading hint
-  const wc  = $('welcome');
-  const img = $('chat-img');
-  if (wc)  { wc.style.display = 'none'; }
-  if (img) { img.style.display = 'none'; img.src = ''; }
-  // Show a loading label while waiting for first screenshot
-  const log = $('log');
-  let ldr = $('chat-loading');
-  if (!ldr) {
-    ldr = document.createElement('div');
-    ldr.id = 'chat-loading';
-    ldr.style.cssText = 'padding:10px;color:#808080;font-size:11px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)';
-    ldr.textContent = 'Loading chat…';
-    log.appendChild(ldr);
-  }
-  ldr.style.display = 'block';
+  // Clear previous messages
+  renderedIds.clear();
+  const ml = $('msg-log');
+  ml.innerHTML = '';
+  ml.style.display = 'none';
+
+  // Show loading, hide welcome
+  $('welcome').style.display = 'none';
+  $('chat-loading').style.display = 'block';
 
   renderCL();
 }
 
-// ── Screenshot of WA chat panel ────────────────────────────────────────────
-bridge.onChatImg(src => {
-  const img = $('chat-img');
-  const ldr = $('chat-loading');
-  const wc  = $('welcome');
-  if (img) {
-    img.src = src;
-    img.style.display = 'block';
+// ── Render messages from WA ────────────────────────────────────────────────────
+bridge.onMessages(msgs => {
+  if (!msgs || selIdx < 0) return;
+
+  const ml = $('msg-log');
+  let added = false;
+
+  msgs.forEach(m => {
+    if (renderedIds.has(m.id)) return;
+    renderedIds.add(m.id);
+    added = true;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-wrap ' + (m.isOut ? 'out' : 'in');
+
+    let inner = '';
+    // Show sender name for incoming group messages
+    if (!m.isOut && m.sender) {
+      inner += `<div class="msg-sender">${esc(m.sender)}</div>`;
+    }
+    inner += `<div class="msg-bubble">${esc(m.text)}<span class="msg-time">${esc(m.time)}</span></div>`;
+    wrap.innerHTML = inner;
+    ml.appendChild(wrap);
+  });
+
+  if (msgs.length > 0) {
+    // Hide loading, show chat
+    $('chat-loading').style.display = 'none';
+    ml.style.display = 'block';
   }
-  if (ldr) ldr.style.display = 'none';
-  if (wc)  wc.style.display  = 'none';
-  // Scroll to bottom
-  const log = $('log');
-  log.scrollTop = log.scrollHeight;
+
+  if (added) {
+    // Scroll to newest message
+    const log = $('log');
+    log.scrollTop = log.scrollHeight;
+  }
 });
 
-// ── Send message ───────────────────────────────────────────────────────────
+// ── Send message ───────────────────────────────────────────────────────────────
 function doSend() {
   const txt = $('input').value.trim();
   if (!txt || selIdx < 0) return;
   bridge.sendMessage(txt);
   $('input').value = '';
   updateLen();
-  // Screenshot will update within 1.5s showing the sent message
 }
-
 $('btn-send').onclick = doSend;
-$('input').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); } };
+$('input').onkeydown = e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+};
 
-// ── Message length counter ─────────────────────────────────────────────────
 function updateLen() {
   const n = $('input').value.length;
   $('mlen-cnt').textContent = n + '/1024';
-  $('mlen-fill').style.width = Math.min(100,(n/1024)*100) + '%';
+  $('mlen-fill').style.width = Math.min(100, (n / 1024) * 100) + '%';
 }
 $('input').oninput = updateLen;
 
-// ── Util ───────────────────────────────────────────────────────────────────
+// ── Util ───────────────────────────────────────────────────────────────────────
 function esc(s) {
-  return String(s||'')
+  return String(s || '')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Clock ──────────────────────────────────────────────────────────────────
+// ── Clock ──────────────────────────────────────────────────────────────────────
 function tick() {
   const n = new Date();
-  const h = n.getHours()%12||12, m = String(n.getMinutes()).padStart(2,'0');
-  $('outer-tb-title').textContent = 'ICQ Messenger  •  ' + h+':'+m+(n.getHours()>=12?' PM':' AM');
+  const h = n.getHours() % 12 || 12;
+  const m = String(n.getMinutes()).padStart(2, '0');
+  $('outer-tb-title').textContent = 'ICQ Messenger  •  ' + h + ':' + m + (n.getHours() >= 12 ? ' PM' : ' AM');
 }
 tick(); setInterval(tick, 30000);
 </script>
