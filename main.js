@@ -1,13 +1,16 @@
 /**
  * main.js — ICQ Messenger
- * waWindow (hidden) = real WhatsApp Web, untouched
- * icqWindow (visible) = ICQ UI, contacts from DOM scrape, messages from capturePage()
+ * waWindow (hidden) = real WhatsApp Web
+ * icqWindow (visible) = ICQ UI
+ *
+ * Contacts: DOM-scraped from waWindow every 2s
+ * Messages: capturePage() screenshot of waWindow's #main panel
  */
 const { app, BrowserWindow, ipcMain, session, Menu } = require('electron');
 const path = require('path');
 
-let icqWindow   = null;
-let waWindow    = null;
+let icqWindow    = null;
+let waWindow     = null;
 let contactTimer = null;
 let screenTimer  = null;
 let statusSent   = false;
@@ -140,17 +143,31 @@ function createWaWindow() {
   waWindow = new BrowserWindow({
     width: 1280, height: 900,
     show: false,
-    paintWhenInitiallyHidden: true,  // render even when hidden
+    paintWhenInitiallyHidden: true,
     webPreferences: {
-      contextIsolation:     false,   // needed for contacts to render (DOM layout)
-      nodeIntegration:      false,
-      partition:            'persist:whatsapp',
-      backgroundThrottling: false,
+      contextIsolation: false,   // required for contacts to render properly
+      nodeIntegration:  false,
+      partition:        'persist:whatsapp',
     },
   });
 
   waWindow.webContents.setUserAgent(WA_UA);
+  waWindow.webContents.setBackgroundThrottling(false);
+
+  // ── Load WhatsApp Web ──
   waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
+
+  // ── Apply viewport IMMEDIATELY after loadURL (same call-stack, before WASM starts)
+  // This is the exact timing from fdebb7c that made contacts work.
+  // The V8 crash at 2d68931 was from setOpacity(0)+showInactive(), NOT from this call.
+  waWindow.webContents.enableDeviceEmulation({
+    screenPosition:    'desktop',
+    screenSize:        { width: 1280, height: 900 },
+    viewPosition:      { x: 0, y: 0 },
+    deviceScaleFactor: 1,
+    viewSize:          { width: 1280, height: 900 },
+    fitToView:         false,
+  });
 
   waWindow.webContents.on('did-fail-load', (e, code, desc) => {
     console.error('[ICQ] WA load failed:', code, desc);
@@ -161,55 +178,35 @@ function createWaWindow() {
   const onLoaded = () => {
     if (loaded) return;
     loaded = true;
-    console.log('[ICQ] WA page loaded — waiting for WASM to settle...');
+    console.log('[ICQ] WA page loaded — nudging virtual scroll in 4s');
 
-    // ── CRITICAL: enableDeviceEmulation MUST be called AFTER WASM init ──────
-    // Calling it during WASM loading (dom-ready / ~4s) causes a V8 SIGSEGV
-    // crash on macOS ARM (EXC_BAD_ACCESS in v8::CpuProfile::GetTopDownRoot).
-    // At 10s, WASM is fully loaded and safe to call Electron internal APIs.
+    // Nudge contact list virtual scroll
     setTimeout(async () => {
-      try {
-        waWindow.webContents.enableDeviceEmulation({
-          screenPosition:    'desktop',
-          screenSize:        { width: 1280, height: 900 },
-          viewPosition:      { x: 0, y: 0 },
-          deviceScaleFactor: 1,
-          viewSize:          { width: 1280, height: 900 },
-          fitToView:         false,
-        });
-        console.log('[ICQ] enableDeviceEmulation applied');
-      } catch (e) { console.error('[ICQ] enableDeviceEmulation error:', e.message); }
-
-      // Nudge virtual scroll so IntersectionObserver renders contacts
       try {
         await waWindow.webContents.executeJavaScript(`
           (function(){
             window.dispatchEvent(new Event('resize'));
             ['[data-testid="chat-list"]','#side','[aria-label*="Chat list"]']
-              .map(s=>document.querySelector(s)).filter(Boolean)
-              .forEach(el=>{
-                el.scrollTop=1;
-                el.dispatchEvent(new Event('scroll',{bubbles:true}));
-                el.scrollTop=0;
-                el.dispatchEvent(new Event('scroll',{bubbles:true}));
+              .map(s => document.querySelector(s)).filter(Boolean)
+              .forEach(el => {
+                el.scrollTop = 1;
+                el.dispatchEvent(new Event('scroll', {bubbles:true}));
+                el.scrollTop = 0;
+                el.dispatchEvent(new Event('scroll', {bubbles:true}));
               });
             window.dispatchEvent(new Event('resize'));
           })()`);
-        console.log('[ICQ] scroll nudge done');
       } catch(e) { console.error('[ICQ] nudge error:', e.message); }
+    }, 4000);
 
-    }, 10000); // ← 10s delay — WASM settled by then
+    setTimeout(startContactLoop, 5000);
 
-    // Start scraping 2 seconds after the nudge
-    setTimeout(startContactLoop, 12000);
-
-    // Sign-in prompt fallback
     setTimeout(() => {
       if (!statusSent) {
-        console.log('[ICQ] No contacts after 40s — prompting sign-in');
+        console.log('[ICQ] No contacts after 30s — prompting sign-in');
         icqWindow?.webContents.send('wa-status', { status: 'needsLogin' });
       }
-    }, 40000);
+    }, 30000);
   };
 
   waWindow.webContents.on('did-finish-load',  onLoaded);
@@ -258,6 +255,7 @@ ipcMain.on('wa-click-contact', async (e, index) => {
         }
         if (cells[${i}]) cells[${i}].click();
       })()`);
+    // Give WA time to open the chat, then start screenshotting
     setTimeout(startCapture, 1500);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
