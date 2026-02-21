@@ -77,27 +77,9 @@ async function checkLoginAndStart() {
       icqWindow?.webContents.send('wa-status', { status: 'ready' });
       startDataLoop();
     } else {
-      console.log('[ICQ] WA not logged in — showing WA window for QR scan');
-      waWindow.show();
-      icqWindow?.webContents.send('wa-status', {
-        status: 'qr',
-        msg: 'Scan the QR code in the WhatsApp window to sign in.',
-      });
-      // Re-check every 4 seconds until logged in
-      const pollLogin = setInterval(async () => {
-        if (!waWindow || waWindow.isDestroyed()) { clearInterval(pollLogin); return; }
-        try {
-          const in2 = await waWindow.webContents.executeJavaScript(
-            `!!(document.getElementById('side') || document.querySelector('[data-testid^="cell-frame"]'))`
-          );
-          if (in2) {
-            clearInterval(pollLogin);
-            waWindow.hide();
-            icqWindow?.webContents.send('wa-status', { status: 'ready' });
-            startDataLoop();
-          }
-        } catch (_) {}
-      }, 4000);
+      console.log('[ICQ] WA not logged in — waiting for manual sign-in');
+      // Do NOT auto-show WA window — let user click "Sign in" button
+      icqWindow?.webContents.send('wa-status', { status: 'needsLogin' });
     }
   } catch (e) {
     console.error('[ICQ] checkLogin error:', e.message);
@@ -213,6 +195,28 @@ ipcMain.on('wa-send-message', async (e, text) => {
       })()
     `);
   } catch (err) { console.error('[ICQ] send error:', err.message); }
+});
+
+// ── IPC: show WA window for QR scan (user clicked "Sign in") ─────────────────
+ipcMain.on('wa-show', () => {
+  if (!waWindow || waWindow.isDestroyed()) return;
+  waWindow.show();
+  waWindow.focus();
+  // Poll for login every 3 seconds, hide once logged in
+  const poll = setInterval(async () => {
+    if (!waWindow || waWindow.isDestroyed()) { clearInterval(poll); return; }
+    try {
+      const ok = await waWindow.webContents.executeJavaScript(
+        `!!(document.getElementById('side') || document.querySelector('[data-testid^="cell-frame"]'))`
+      );
+      if (ok) {
+        clearInterval(poll);
+        waWindow.hide();
+        icqWindow?.webContents.send('wa-status', { status: 'ready' });
+        startDataLoop();
+      }
+    } catch (_) {}
+  }, 3000);
 });
 
 // ── IPC: window controls ──────────────────────────────────────────────────────

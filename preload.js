@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('icq', {
   // User actions → hidden WhatsApp
   clickContact: (index) => ipcRenderer.send('wa-click-contact', index),
   sendMessage:  (text)  => ipcRenderer.send('wa-send-message', text),
+  showWa:       ()      => ipcRenderer.send('wa-show'),
 
   // Data from hidden WhatsApp → ICQ UI
   onData:   (cb) => ipcRenderer.on('wa-data',   (e, d) => cb(d)),
