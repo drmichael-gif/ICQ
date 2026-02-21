@@ -318,17 +318,29 @@ ipcMain.on('wa-click-contact', async (e, index) => {
   try {
     const result = await waWindow.webContents.executeJavaScript(`
       (function(){
+        // MUST match the exact same selector priority as CONTACT_SCRAPER
         const sels = [
           '[data-testid="cell-frame-container"]',
           '[data-testid^="cell-frame"]',
           '[data-testid="chat-list-item"]',
           '#side [role="listitem"]',
+          '#pane-side [role="listitem"]',
           '[aria-label*="Chat list"] [role="listitem"]',
+          '[aria-label*="Chat list"] > div > div',
         ];
         let cells = [];
         for (const s of sels) {
           cells = Array.from(document.querySelectorAll(s));
           if (cells.length > 0) break;
+        }
+        // Tabindex fallback — must match CONTACT_SCRAPER's fallback
+        if (!cells.length) {
+          const side = document.getElementById('side') ||
+                       document.querySelector('[aria-label*="Chat list"]');
+          if (side) {
+            cells = Array.from(side.querySelectorAll('[tabindex="-1"],[tabindex="0"]'))
+              .filter(el => el.querySelector('span[dir="auto"], [title]') && el.offsetHeight > 20);
+          }
         }
         const cell = cells[${i}];
         if (!cell) return { ok: false, total: cells.length };
@@ -336,7 +348,8 @@ ipcMain.on('wa-click-contact', async (e, index) => {
         return { ok: true, total: cells.length, name: cell.textContent?.slice(0,30) };
       })()`);
     console.log('[ICQ] wa-click-contact index:', i, 'result:', JSON.stringify(result));
-    // Start capture loop — first shot at 800ms, then every 1.5s
+    // Stop any existing capture loop, then restart fresh for this contact
+    if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
     setTimeout(captureChat, 800);
     setTimeout(startCapture, 1500);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
@@ -441,9 +454,73 @@ function createIcqWindow() {
       { type: 'separator' },
       { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
     ]},
+    { label: 'Debug', submenu: [
+      { label: 'Test screenshot + OCR now', click: async () => {
+        console.log('[ICQ] Manual test: capturing screenshot + text...');
+        if (!waWindow || waWindow.isDestroyed()) {
+          console.log('[ICQ] waWindow not ready');
+          return;
+        }
+        try {
+          const img = await waWindow.webContents.capturePage();
+          const sz = img.isEmpty() ? null : img.getSize();
+          console.log('[ICQ] capturePage:', sz ? `${sz.width}x${sz.height}` : 'EMPTY');
+          if (!img.isEmpty()) {
+            const b64 = 'data:image/png;base64,' + img.toPNG().toString('base64');
+            console.log('[ICQ] PNG bytes:', img.toPNG().length);
+            icqWindow?.webContents.send('wa-chat-img', b64);
+          }
+          const waText = await waWindow.webContents.executeJavaScript(
+            `(document.getElementById('main')||{innerText:''}).innerText`
+          ).catch(() => '');
+          console.log('[ICQ] innerText chars:', waText.length);
+          if (waText.length > 0) {
+            console.log('[ICQ] innerText preview:', waText.slice(0,200));
+          }
+          if (ocrWindow && !ocrWindow.isDestroyed()) {
+            const b64 = img.isEmpty() ? '' : 'data:image/png;base64,' + img.toPNG().toString('base64');
+            ocrWindow.webContents.send('analyze', { screenshot: b64, waText });
+          }
+        } catch (err) {
+          console.error('[ICQ] test capture error:', err.message);
+        }
+      }},
+      { label: 'Show OCR window', click: () => {
+        if (ocrWindow && !ocrWindow.isDestroyed()) {
+          ocrWindow.show();
+          ocrWindow.focus();
+        }
+      }},
+      { label: 'Log WA DOM info', click: async () => {
+        if (!waWindow || waWindow.isDestroyed()) return;
+        try {
+          const info = await waWindow.webContents.executeJavaScript(`
+            (function(){
+              const side = document.getElementById('side');
+              const main = document.getElementById('main');
+              const tids = side ? [...new Set(Array.from(side.querySelectorAll('[data-testid]'))
+                .map(el=>el.getAttribute('data-testid')).filter(Boolean))].slice(0,20) : [];
+              return {
+                title: document.title,
+                hasSide: !!side, hasMain: !!main,
+                sideChildren: side?.querySelectorAll('*').length || 0,
+                mainTextLen: main?.innerText?.length || 0,
+                testids: tids,
+              };
+            })()`);
+          console.log('[ICQ] WA DOM info:', JSON.stringify(info, null, 2));
+        } catch(err) { console.error('[ICQ] DOM info error:', err.message); }
+      }},
+    ]},
     { label: 'View', submenu: [
       { label: 'ICQ DevTools',      click: () => icqWindow?.webContents.openDevTools({ mode: 'detach' }) },
       { label: 'WhatsApp DevTools', click: () => waWindow?.webContents.openDevTools({ mode: 'detach' }) },
+      { label: 'OCR DevTools',      click: () => {
+        if (ocrWindow && !ocrWindow.isDestroyed()) {
+          ocrWindow.show();
+          ocrWindow.webContents.openDevTools({ mode: 'detach' });
+        }
+      }},
     ]},
   ]));
 }

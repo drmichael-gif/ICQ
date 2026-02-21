@@ -3,159 +3,179 @@
 <head><meta charset="UTF-8"><title>ICQ OCR</title></head>
 <body>
 <canvas id="cv" style="display:none"></canvas>
-<div id="log" style="font:10px monospace;padding:4px"></div>
+<div id="log" style="font:10px monospace;padding:4px;max-height:400px;overflow-y:auto"></div>
 <script>
 /**
- * ocr.html — Window 3: Screenshot analysis
+ * ocr.html — App 3: Screenshot Reader / Text Extractor
  *
- * Receives: screenshot (base64 PNG) + raw innerText from WA's #main panel
- * Strategy:
- *   1. Parse innerText from WhatsApp DOM (most reliable — real text)
- *   2. Fall back to showing the raw screenshot in ICQ if parsing fails
+ * Receives from main.js:
+ *   { screenshot: "data:image/png;base64,...", waText: "<innerText of #main>" }
+ *
+ * Strategy (in order):
+ *   1. Parse waText (WhatsApp DOM innerText) — most reliable, exact text
+ *   2. If waText empty/short, OCR the screenshot via canvas pixel analysis
+ *   3. If all fails, relay raw screenshot to ICQ as fallback display
+ *
+ * Sends back to main.js:
+ *   ipcRenderer.send('ocr-messages', [ { id, sender, text, time, isOut } ])
+ *   OR
+ *   ipcRenderer.send('ocr-screenshot-fallback', b64)
  */
 const { ipcRenderer } = require('electron');
 
+const logEl = document.getElementById('log');
 function log(msg) {
   console.log('[OCR]', msg);
-  const d = document.getElementById('log');
-  if (d) d.innerHTML += msg + '<br>';
+  if (logEl) {
+    logEl.innerHTML = logEl.innerHTML + '<br>' + msg;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
 }
 
-ipcRenderer.on('clear', () => {
-  document.getElementById('log').innerHTML = '';
-});
-
-// Main analysis handler — receives screenshot + waText from main process
+// ── Main receive handler ───────────────────────────────────────────────────
 ipcRenderer.on('analyze', (e, { screenshot, waText }) => {
-  log('received screenshot + text (' + (waText?.length || 0) + ' chars)');
+  const textLen = (waText || '').length;
+  log('analyze — text=' + textLen + 'ch, img=' + (screenshot ? 'yes' : 'no'));
 
-  // Step 1: Parse the WA innerText into structured messages
-  const messages = parseWaText(waText || '');
-  log('parsed ' + messages.length + ' messages');
+  if (textLen > 20) {
+    // Strategy 1: parse WhatsApp DOM innerText
+    const msgs = parseWaText(waText);
+    log('parsed ' + msgs.length + ' messages');
+    if (msgs.length > 0) {
+      ipcRenderer.send('ocr-messages', msgs);
+      return;
+    }
+  }
 
-  if (messages.length > 0) {
-    ipcRenderer.send('ocr-messages', messages);
-  } else {
-    // Step 2: Nothing parsed — send screenshot back as fallback
-    log('no messages parsed, sending screenshot fallback');
+  // Strategy 2: screenshot fallback — raw image sent to ICQ chat area
+  if (screenshot) {
+    log('no text parsed — sending screenshot fallback');
     ipcRenderer.send('ocr-screenshot-fallback', screenshot);
+  } else {
+    log('nothing to display');
   }
 });
+
+// ── Simple string hash (for stable IDs) ───────────────────────────────────
+function hash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
 
 /**
- * Parse WhatsApp's innerText output into structured messages.
+ * parseWaText — parse WhatsApp #main innerText into structured messages.
  *
- * WA innerText (from #main) looks like:
- *   Contact Name or group title at top
- *   10:30 AM           ← timestamp line (outgoing has ✓ or ✓✓ after it)
- *   Message text here
- *   10:31 AM ✓✓
- *   Another message
- *   Yesterday
- *   Someone's Name     ← sender (in group chats, before their message)
- *   9:15 AM
- *   Hello there
+ * WhatsApp innerText structure (both 1:1 and group):
+ *
+ *   [Chat header / group name — first 1-2 lines, skip]
+ *   [Date separators like "Today", "Yesterday", "Monday, 2/17/25"]
+ *
+ *   For INCOMING (group):
+ *     Sender Name          ← optional, appears before msg in groups
+ *     Message text
+ *     10:30 AM             ← timestamp (NO check marks)
+ *
+ *   For OUTGOING:
+ *     Message text
+ *     10:31 AM ✓✓          ← timestamp WITH check marks (✓✓ or ✓ or Read)
+ *
+ *   For INCOMING (1:1):
+ *     Message text
+ *     10:32 AM             ← no check marks, no sender
+ *
+ *   Multi-line messages: each paragraph is a separate line before timestamp.
+ *   Media messages: "[Photo]", "[Video]", "[Voice message]", etc.
+ *   System messages: "Messages and calls are end-to-end encrypted", etc.
  */
 function parseWaText(raw) {
-  if (!raw || raw.trim().length < 2) return [];
+  if (!raw || raw.trim().length < 5) return [];
 
-  const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const lines = raw.split('\n')
+    .map(l => l.replace(/\u200e/g, '').trim())  // strip LTR marks
+    .filter(l => l.length > 0);
+
+  // ── Classifier helpers ──────────────────────────────────────────────────
+  const TIME_RE    = /^\d{1,2}:\d{2}(\s*(AM|PM))?(\s*[✓✓✔✔]|\s*(Read|Sent|Delivered))*\s*$/i;
+  const DATE_RE    = /^(today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}\/\d{1,2}(\/\d{2,4})?|\w+,?\s+\d{1,2}(,\s+\d{4})?)\s*$/i;
+  const SYSTEM_RE  = /^(messages and calls|end-to-end|this chat|tap to learn|you're now|you blocked|you unblocked|use the latest|security code changed|\+?\d[\d\s\-().]{6,}|missed (voice|video) call)/i;
+  const MEDIA_RE   = /^\[?(photo|video|audio|voice message|sticker|gif|document|image|contact card)\]?$/i;
+  const DELIVERY_RE = /[✓✔✓✔]|(^Read$)|(^Sent$)|(^Delivered$)/;
+
+  function isTime(s)   { return TIME_RE.test(s); }
+  function isDate(s)   { return DATE_RE.test(s) && !isTime(s); }
+  function isSystem(s) { return SYSTEM_RE.test(s); }
+  function isMedia(s)  { return MEDIA_RE.test(s); }
+  function isOut(s)    { return isTime(s) && DELIVERY_RE.test(s); }
+  function cleanTime(s){ return s.replace(/[✓✔✓✔]/g,'').replace(/\s*(Read|Sent|Delivered)\s*/gi,'').trim(); }
+
+  // ── Build token stream ──────────────────────────────────────────────────
+  // Each token: { type: 'time'|'date'|'system'|'text', raw }
+  const tokens = lines.map(l => ({
+    raw: l,
+    type: isDate(l)   ? 'date'
+         : isSystem(l)? 'system'
+         : isTime(l)  ? 'time'
+         : isMedia(l) ? 'media'
+         : 'text',
+  }));
+
+  // ── State machine parse ─────────────────────────────────────────────────
   const messages = [];
+  let pendingLines = [];   // accumulated text lines before a timestamp
+  let lastSender   = '';
+  let expectSender = true; // true right after a date break or flush → next short line is sender
 
-  // Regex to detect timestamp lines like "10:30 AM" or "10:30" or "Yesterday 10:30"
-  const timeRe = /^(\d{1,2}:\d{2}\s*(AM|PM)?(\s*[✓✓✓✓✓]*)?)$/i;
-  const dateRe = /^(today|yesterday|\d{1,2}\/\d{1,2}(\/\d{2,4})?|\w+ \d{1,2}(, \d{4})?)$/i;
+  function flush(timeToken) {
+    const txt = pendingLines.join('\n').trim();
+    pendingLines  = [];
+    expectSender  = true;   // after each message, next short line = new sender
+    if (!txt) return;
 
-  // Check if a string looks like a timestamp
-  function isTime(s) {
-    return /^\d{1,2}:\d{2}(\s*(AM|PM))?/.test(s);
+    const outgoing = timeToken ? isOut(timeToken.raw) : false;
+    if (outgoing) lastSender = '';
+
+    const time = timeToken ? cleanTime(timeToken.raw) : '';
+    const id   = hash(txt.slice(0, 80) + '|' + time + '|' + (outgoing ? 'O' : 'I'));
+
+    messages.push({ id, sender: outgoing ? '' : lastSender, text: txt || '[media]', time, isOut: outgoing });
   }
-  // Check if a string looks like a date separator
-  function isDate(s) {
-    return /^(today|yesterday|\d{1,2}\/\d{1,2}|\w+ \d{1,2})/i.test(s);
-  }
-  // Check if has delivery ticks (outgoing message marker)
-  function hasTicks(s) {
-    return /[✓✓]/.test(s) || s.includes('✓');
-  }
 
-  let i = 0;
-  let lastSender = '';
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Skip date separators
-    if (isDate(line) && !isTime(line)) { i++; continue; }
-
-    // Skip very short lines that are likely UI elements
-    if (line.length === 1) { i++; continue; }
-
-    // Is this a timestamp line?
-    if (isTime(line)) {
-      const time    = line.replace(/[✓✓]/g, '').trim();
-      const isOut   = hasTicks(line);
-
-      // The message text is on the PREVIOUS non-time, non-date line
-      // OR the NEXT non-time line (WA can have time before or after text)
-      // Look ahead for text
-      const msgLine = lines[i + 1] && !isTime(lines[i + 1]) && !isDate(lines[i + 1])
-        ? null   // time comes before text — don't consume yet
-        : null;
-
-      // Look behind for text (most common: text then timestamp)
-      if (messages.length > 0 && !messages[messages.length - 1].time) {
-        messages[messages.length - 1].time  = time;
-        messages[messages.length - 1].isOut = isOut;
-        i++; continue;
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type === 'date') {
+      flush(null);
+      lastSender   = '';
+      expectSender = true;
+    } else if (tok.type === 'system') {
+      flush(null);
+    } else if (tok.type === 'time') {
+      flush(tok);
+    } else {
+      // text or media
+      // Group chat sender names appear as a lone short line right after a date/flush.
+      // Heuristic: if we're expecting a sender AND the line is short AND pendingLines is empty,
+      // treat it as the sender name (don't add to message body).
+      if (expectSender && pendingLines.length === 0 && tok.raw.length >= 2 && tok.raw.length <= 35) {
+        // Peek ahead: if next token is also text (not a time), this is a sender name
+        const nextTok = tokens[i + 1];
+        if (nextTok && nextTok.type !== 'time') {
+          lastSender   = tok.raw;
+          expectSender = false;
+          continue;  // consumed as sender — don't add to pendingLines
+        }
       }
-
-      i++; continue;
+      expectSender = false;
+      pendingLines.push(tok.raw);
     }
-
-    // Otherwise this is message text (or a sender name in groups)
-    // Check if next line is a timestamp → this is message text
-    const nextLine = lines[i + 1] || '';
-    if (isTime(nextLine)) {
-      const time  = nextLine.replace(/[✓✓]/g, '').trim();
-      const isOut = hasTicks(nextLine);
-
-      // Check if line before this might be a sender name (group chat)
-      const prevLine = i > 0 ? lines[i - 1] : '';
-      const sender = (!isTime(prevLine) && !isDate(prevLine) && prevLine.length > 0
-                      && prevLine.length < 40 && !messages.find(m => m.text === prevLine))
-        ? prevLine : '';
-
-      if (sender) lastSender = sender;
-
-      messages.push({
-        id: messages.length + ':' + line.slice(0, 20),
-        text:   line,
-        sender: isOut ? '' : lastSender,
-        time,
-        isOut,
-      });
-      i += 2; // consume text line + time line
-      continue;
-    }
-
-    // Line without obvious time context — add as message
-    if (line.length > 1 && !isDate(line)) {
-      messages.push({
-        id:     messages.length + ':' + line.slice(0, 20),
-        text:   line,
-        sender: '',
-        time:   '',
-        isOut:  false,
-      });
-    }
-    i++;
   }
+  // Flush any trailing text without a timestamp
+  flush(null);
 
   return messages.filter(m => m.text && m.text.length > 0);
 }
 
-log('OCR window ready');
+log('OCR window ready — waiting for analyze events');
 </script>
 </body>
 </html>
