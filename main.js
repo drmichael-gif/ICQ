@@ -248,6 +248,30 @@ function createWaWindow() {
     loaded = true;
     console.log('[ICQ] WA loaded — starting scrape in 5s');
 
+    // Inject CSS to permanently hide the "Download WhatsApp for Mac" nudge
+    setTimeout(async () => {
+      try {
+        await waWindow.webContents.executeJavaScript(`
+          (function(){
+            if (document.getElementById('icq-hide-nudge')) return;
+            const s = document.createElement('style');
+            s.id = 'icq-hide-nudge';
+            // Hide all known "download app" overlay selectors
+            s.textContent = \`
+              [data-testid*="download"],
+              [data-testid*="get-app"],
+              [data-testid*="nudge"],
+              [data-testid*="startup"],
+              [data-testid="intro-md-beta-logo-dark"],
+              [data-testid="intro-md-beta-logo-light"]
+              { display: none !important; }
+            \`;
+            document.head?.appendChild(s);
+            console.log('[ICQ] download nudge CSS injected');
+          })()`);
+      } catch(e) { console.error('[ICQ] CSS inject error:', e.message); }
+    }, 3000);
+
     // Nudge virtual scroll at 4s (window is visible so this always works)
     setTimeout(async () => {
       try {
@@ -278,6 +302,51 @@ function createWaWindow() {
   waWindow.webContents.on('did-finish-load',  onLoaded);
   waWindow.webContents.on('did-stop-loading', onLoaded);
   waWindow.on('closed', () => { waWindow = null; });
+}
+
+// ── Helper: dismiss "Download WhatsApp for Mac" overlay ──────────────────────
+async function dismissDownloadNudge() {
+  if (!waWindow || waWindow.isDestroyed()) return;
+  try {
+    await waWindow.webContents.executeJavaScript(`
+      (function() {
+        // 1. Try known close-button testids
+        const closeSelectors = [
+          '[data-testid="get-app-nudge-close-button"]',
+          '[data-testid*="download"][data-testid*="close"]',
+          '[data-testid*="nudge"][data-testid*="close"]',
+          '[data-testid*="get-app"] [role="button"]',
+          '[data-testid*="startup"] [role="button"]',
+        ];
+        for (const s of closeSelectors) {
+          const el = document.querySelector(s);
+          if (el) { el.click(); console.log('[ICQ] dismissed nudge via:', s); return; }
+        }
+        // 2. Find any button inside a "download" wrapper
+        const wrapper = document.querySelector('[data-testid*="download"], [data-testid*="nudge"], [data-testid*="get-app"]');
+        if (wrapper) {
+          const btn = wrapper.querySelector('button, [role="button"]');
+          if (btn) { btn.click(); return; }
+          // Try clicking outside to dismiss
+          document.querySelector('#main')?.click();
+          return;
+        }
+        // 3. Inject CSS to permanently hide it (nuclear option)
+        if (!document.getElementById('icq-hide-nudge')) {
+          const s = document.createElement('style');
+          s.id = 'icq-hide-nudge';
+          s.textContent = [
+            '[data-testid*="download"]',
+            '[data-testid*="get-app"]',
+            '[data-testid*="nudge"]',
+            '[data-testid*="startup"]',
+            // fallback: any full-screen overlay on #main
+          ].join(',\\n') + ' { display: none !important; }';
+          document.head?.appendChild(s);
+          console.log('[ICQ] injected CSS to hide download nudge');
+        }
+      })()`);
+  } catch (e) { console.error('[ICQ] dismissDownloadNudge error:', e.message); }
 }
 
 // ── IPC: bring WA on-screen for QR sign-in ───────────────────────────────────
@@ -311,48 +380,104 @@ ipcMain.on('wa-show', () => {
   }, 3000);
 });
 
+// ── Helper: resolve common cell selector list ─────────────────────────────────
+const CELL_SELS_JS = `
+  (function getCells() {
+    const sels = [
+      '[data-testid="cell-frame-container"]',
+      '[data-testid^="cell-frame"]',
+      '[data-testid="chat-list-item"]',
+      '#side [role="listitem"]',
+      '#pane-side [role="listitem"]',
+      '[aria-label*="Chat list"] [role="listitem"]',
+      '[aria-label*="Chat list"] > div > div',
+    ];
+    for (const s of sels) {
+      const found = Array.from(document.querySelectorAll(s));
+      if (found.length > 0) return found;
+    }
+    // Tabindex fallback
+    const side = document.getElementById('side') ||
+                 document.querySelector('[aria-label*="Chat list"]');
+    if (side) {
+      return Array.from(side.querySelectorAll('[tabindex="-1"],[tabindex="0"]'))
+        .filter(el => el.querySelector('span[dir="auto"],[title]') && el.offsetHeight > 20);
+    }
+    return [];
+  })()
+`;
+
 // ── IPC: click a contact ──────────────────────────────────────────────────────
 ipcMain.on('wa-click-contact', async (e, index) => {
   if (!waWindow || waWindow.isDestroyed()) return;
   const i = index | 0;
+
+  // Stop existing capture loop — fresh start for this contact
+  if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
+
   try {
-    const result = await waWindow.webContents.executeJavaScript(`
+    // ── Step 1: Move waWindow on-screen so sendInputEvent reaches React ──
+    // Place it under icqWindow (same position). icqWindow stays alwaysOnTop.
+    const d   = screen.getPrimaryDisplay();
+    const waW = 1280, waH = 900;
+    const waX = d.bounds.x + Math.floor((d.bounds.width  - waW) / 2);
+    const waY = d.bounds.y + Math.floor((d.bounds.height - waH) / 2);
+    waWindow.setPosition(waX, waY);
+    icqWindow?.setAlwaysOnTop(true);   // keep ICQ covering WA
+    icqWindow?.focus();
+
+    // Let the window settle & React re-render its event listeners
+    await new Promise(r => setTimeout(r, 250));
+
+    // ── Step 2: Get cell centre coords (CSS pixels) ──────────────────────
+    const cellInfo = await waWindow.webContents.executeJavaScript(`
       (function(){
-        // MUST match the exact same selector priority as CONTACT_SCRAPER
-        const sels = [
-          '[data-testid="cell-frame-container"]',
-          '[data-testid^="cell-frame"]',
-          '[data-testid="chat-list-item"]',
-          '#side [role="listitem"]',
-          '#pane-side [role="listitem"]',
-          '[aria-label*="Chat list"] [role="listitem"]',
-          '[aria-label*="Chat list"] > div > div',
-        ];
-        let cells = [];
-        for (const s of sels) {
-          cells = Array.from(document.querySelectorAll(s));
-          if (cells.length > 0) break;
-        }
-        // Tabindex fallback — must match CONTACT_SCRAPER's fallback
-        if (!cells.length) {
-          const side = document.getElementById('side') ||
-                       document.querySelector('[aria-label*="Chat list"]');
-          if (side) {
-            cells = Array.from(side.querySelectorAll('[tabindex="-1"],[tabindex="0"]'))
-              .filter(el => el.querySelector('span[dir="auto"], [title]') && el.offsetHeight > 20);
-          }
-        }
-        const cell = cells[${i}];
+        const cells = ${CELL_SELS_JS};
+        const cell  = cells[${i}];
         if (!cell) return { ok: false, total: cells.length };
-        cell.click();
-        return { ok: true, total: cells.length, name: cell.textContent?.slice(0,30) };
+        const r  = cell.getBoundingClientRect();
+        const cx = Math.round(r.left + r.width  / 2);
+        const cy = Math.round(r.top  + r.height / 2);
+        return { ok: true, cx, cy, total: cells.length, name: cell.textContent?.slice(0,40) };
       })()`);
-    console.log('[ICQ] wa-click-contact index:', i, 'result:', JSON.stringify(result));
-    // Stop any existing capture loop, then restart fresh for this contact
-    if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
-    setTimeout(captureChat, 800);
-    setTimeout(startCapture, 1500);
-  } catch (err) { console.error('[ICQ] click error:', err.message); }
+
+    console.log('[ICQ] wa-click-contact i=%d info=%s', i, JSON.stringify(cellInfo));
+
+    if (cellInfo?.ok) {
+      // ── Step 3: sendInputEvent — real mouse events, React picks these up ──
+      const { cx, cy } = cellInfo;
+      waWindow.webContents.sendInputEvent({ type: 'mouseMove',  x: cx, y: cy });
+      await new Promise(r => setTimeout(r, 60));
+      waWindow.webContents.sendInputEvent({ type: 'mouseDown',  x: cx, y: cy, button: 'left', clickCount: 1 });
+      await new Promise(r => setTimeout(r, 60));
+      waWindow.webContents.sendInputEvent({ type: 'mouseUp',    x: cx, y: cy, button: 'left', clickCount: 1 });
+      console.log('[ICQ] sent mouse click at (%d,%d) for "%s"', cx, cy, cellInfo.name);
+    } else {
+      // Fallback if coords not found — DOM click
+      console.warn('[ICQ] cell coords not found (total=%d), trying DOM click', cellInfo?.total);
+      await waWindow.webContents.executeJavaScript(`
+        (function(){
+          const cells = ${CELL_SELS_JS};
+          const cell  = cells[${i}];
+          if (cell) cell.click();
+        })()`);
+    }
+
+    // ── Step 4: Dismiss the "Download WhatsApp for Mac" nudge ────────────
+    setTimeout(dismissDownloadNudge, 600);
+    setTimeout(dismissDownloadNudge, 1400);  // second attempt after chat load
+
+    // ── Step 5: Move WA back off-screen (after click registered) ─────────
+    setTimeout(() => {
+      const pos = getOffscreenPos();
+      if (waWindow && !waWindow.isDestroyed()) waWindow.setPosition(pos.x, pos.y);
+    }, 500);
+
+    // ── Step 6: Start capture loop ────────────────────────────────────────
+    setTimeout(captureChat,  1500);   // first capture after chat has loaded
+    setTimeout(startCapture, 2000);   // then every 1.5s
+
+  } catch (err) { console.error('[ICQ] click error:', err.message, err.stack); }
 });
 
 // ── IPC: send message ─────────────────────────────────────────────────────────
