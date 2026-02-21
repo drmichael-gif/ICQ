@@ -163,18 +163,23 @@ function createWaWindow() {
   waWindow = new BrowserWindow({
     width: 1280, height: 900,
     show: false,
-    paintWhenInitiallyHidden: true,
     webPreferences: {
-      contextIsolation:     true,   // MUST be true — false causes V8 WASM crash
+      contextIsolation:     true,
       nodeIntegration:      false,
       partition:            'persist:whatsapp',
       backgroundThrottling: false,
+      offscreen:            true,   // ← proper rendering pipeline without showing
+                                    //   virtual scroll, layout, IntersectionObserver
+                                    //   all work correctly. capturePage() reads the
+                                    //   off-screen buffer. No enableDeviceEmulation needed.
     },
   });
 
   waWindow.webContents.setUserAgent(WA_UA);
-  // NOTE: enableDeviceEmulation removed — it triggers the same V8 segfault
-  // capturePage() works fine without it on show:false + paintWhenInitiallyHidden:true
+
+  // offscreen rendering only paints when there's a paint listener
+  waWindow.webContents.setFrameRate(4);           // 4 fps — plenty for screenshots
+  waWindow.webContents.on('paint', () => {});      // required to activate painting
 
   waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
 
@@ -184,61 +189,11 @@ function createWaWindow() {
   });
 
   const onLoaded = () => {
-    console.log('[ICQ] WA page loaded');
-
-    // 1) Immediately inject CSS to force real heights on the contact list.
-    //    This is pure CSS — no JS executed, so safe during WASM init.
-    //    Without a real height, WhatsApp's virtual scroll renders zero items.
-    waWindow.webContents.insertCSS(`
-      html, body, #app {
-        width:  1280px !important;
-        height: 900px  !important;
-        min-height: 900px !important;
-      }
-      #side, #pane-side {
-        height: 860px !important;
-        min-height: 860px !important;
-        display: block !important;
-      }
-      [data-testid="chat-list"],
-      [aria-label*="Chat list"] {
-        height: 820px !important;
-        min-height: 820px !important;
-        overflow-y: auto !important;
-      }
-    `).catch(e => console.error('[ICQ] insertCSS error:', e.message));
-
-    // 2) At 9s — WASM is fully settled. Nudge virtual scroll with
-    //    scroll events so IntersectionObserver sees real list items.
-    setTimeout(async () => {
-      try {
-        await waWindow.webContents.executeJavaScript(`
-          (function(){
-            window.dispatchEvent(new Event('resize'));
-            const sels = [
-              '#side', '#pane-side',
-              '[data-testid="chat-list"]',
-              '[aria-label*="Chat list"]',
-            ];
-            sels.map(s => document.querySelector(s)).filter(Boolean).forEach(el => {
-              el.style.height = '860px';
-              el.style.minHeight = '860px';
-              el.scrollTop = 2;
-              el.dispatchEvent(new Event('scroll', { bubbles: true }));
-              el.scrollTop = 0;
-              el.dispatchEvent(new Event('scroll', { bubbles: true }));
-            });
-            window.dispatchEvent(new Event('resize'));
-          })()
-        `);
-        console.log('[ICQ] Virtual scroll nudge done');
-      } catch(e) { console.error('[ICQ] nudge error:', e.message); }
-    }, 9000);
-
-    // 3) Start scraping at 10s (WASM settled, nudge already done)
+    console.log('[ICQ] WA page loaded — offscreen rendering active');
+    // With offscreen:true, layout engine is fully active so virtual scroll
+    // renders items at the real 1280x900 window size. No tricks needed.
+    // Still wait 10s for WASM to settle before calling executeJavaScript.
     setTimeout(startContactLoop, 10000);
-
-    // 4) If still no contacts at 40s → prompt sign-in
     setTimeout(() => {
       if (!statusSent) {
         console.log('[ICQ] No contacts after 40s — prompting sign-in');
