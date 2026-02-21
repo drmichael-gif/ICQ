@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('icq', {
   showWa:       ()      => ipcRenderer.send('wa-show'),
 
   // Data from hidden WhatsApp → ICQ UI
-  onData:   (cb) => ipcRenderer.on('wa-data',   (e, d) => cb(d)),
-  onStatus: (cb) => ipcRenderer.on('wa-status', (e, d) => cb(d)),
+  onData:    (cb) => ipcRenderer.on('wa-data',    (e, d) => cb(d)),
+  onStatus:  (cb) => ipcRenderer.on('wa-status',  (e, d) => cb(d)),
+
+  // Screenshot of WhatsApp chat panel (base64 PNG data URL)
+  onChatImg: (cb) => ipcRenderer.on('wa-chat-img', (e, src) => cb(src)),
 });

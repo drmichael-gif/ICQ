@@ -1,15 +1,21 @@
 /**
  * main.js — ICQ Messenger
- * waWindow (hidden) = real WhatsApp Web, untouched
- * icqWindow (visible) = our ICQ UI, fed by DOM scraping waWindow every 2s
+ *
+ * Architecture:
+ *   waWindow  — hidden-but-rendered WhatsApp window (opacity=0, skipTaskbar)
+ *   icqWindow — visible ICQ UI (app.html)
+ *
+ * Contacts : DOM-scraped every 2s from waWindow
+ * Messages : capturePage() screenshots of waWindow's #main panel, sent as base64
  */
-const { app, BrowserWindow, ipcMain, session, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, session, Menu } = require('electron');
 const path = require('path');
 
-let icqWindow   = null;
-let waWindow    = null;
-let dataTimer   = null;
-let statusSent  = false;  // track whether we've sent 'ready' to ICQ
+let icqWindow    = null;
+let waWindow     = null;
+let contactTimer = null;   // 2s contact scrape loop
+let screenTimer  = null;   // 1.5s screenshot loop
+let statusSent   = false;
 
 const WA_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -30,29 +36,24 @@ function patchSession(sess) {
   } catch (e) { console.error('[ICQ] patchSession error:', e.message); }
 }
 
-// ── DOM scraper (runs inside waWindow) ───────────────────────────────────────
-// Tries multiple selectors because WhatsApp changes class names frequently.
-const SCRAPER = `
+// ── CONTACTS SCRAPER (runs inside waWindow every 2s) ──────────────────────────
+const CONTACT_SCRAPER = `
 (function() {
   try {
-    // ── CONTACTS: try every known selector ──
     let cells = [];
-    const cSels = [
+    const sels = [
       '[data-testid="cell-frame-container"]',
       '[data-testid^="cell-frame"]',
       '#side [role="listitem"]',
-      '[data-testid="chat-list"] > div > div',
       '[aria-label*="Chat list"] [role="listitem"]',
-      '[aria-label*="Chat list"] > div > div',
     ];
-    for (const s of cSels) {
+    for (const s of sels) {
       const found = Array.from(document.querySelectorAll(s));
       if (found.length > 0) { cells = found; break; }
     }
 
     const contacts = [];
     cells.forEach((cell, i) => {
-      // Name: try multiple selectors
       const nameEl =
         cell.querySelector('[data-testid="cell-frame-title"] span') ||
         cell.querySelector('[data-testid="cell-frame-title"]') ||
@@ -69,156 +70,91 @@ const SCRAPER = `
       const allSpans = Array.from(cell.querySelectorAll('span[dir="auto"]'));
       const preview  = allSpans[1]?.textContent?.trim() || '';
 
-      contacts.push({
-        index:   i,
-        name,
-        unread:  unreadEl?.textContent?.trim() || '',
-        time:    timeEl?.textContent?.trim()   || '',
-        preview,
-      });
+      contacts.push({ index: i, name,
+        unread: unreadEl?.textContent?.trim() || '',
+        time:   timeEl?.textContent?.trim()   || '', preview });
     });
 
-    // ── MESSAGES: current open chat ──
-    const messages = [];
-    const main = document.getElementById('main');
-    if (main) {
-      // Strategy 1: elements with data-id scoped inside #main only
-      let msgEls = Array.from(main.querySelectorAll('[data-id]'));
+    const chatEl = document.querySelector('[data-testid="conversation-header"] span[dir="auto"]') ||
+                   document.querySelector('#main header span[dir="auto"]');
 
-      // Strategy 2: msg-container data-testid
-      if (!msgEls.length) {
-        msgEls = Array.from(main.querySelectorAll('[data-testid="msg-container"]'));
-      }
+    const isLoggedIn = contacts.length > 0 ||
+                       !!document.getElementById('side') ||
+                       !!document.querySelector('[data-testid="chat-list"]') ||
+                       !!document.querySelector('[aria-label*="Chat list"]');
 
-      // Strategy 3: data-pre-plain-text holder (each message row often has this)
-      if (!msgEls.length) {
-        msgEls = Array.from(main.querySelectorAll('[data-pre-plain-text]'));
-      }
-
-      // Strategy 4: any copyable-text span parent divs inside #main
-      if (!msgEls.length) {
-        const spans = Array.from(main.querySelectorAll('span.selectable-text.copyable-text'));
-        // Walk up to get unique message containers
-        const seen = new Set();
-        spans.forEach(s => {
-          let p = s.parentElement;
-          for (let i = 0; i < 6 && p && p !== main; i++, p = p.parentElement) {
-            if (!seen.has(p)) { seen.add(p); }
-          }
-        });
-        msgEls = Array.from(seen);
-      }
-
-      msgEls.slice(-80).forEach(msg => {
-        // Text extraction
-        let text = '';
-        const picks = [
-          msg.querySelector('[data-testid="balloon-text"] span.selectable-text'),
-          msg.querySelector('[data-testid="balloon-text"]'),
-          msg.querySelector('span.selectable-text.copyable-text'),
-          msg.querySelector('span.selectable-text'),
-          msg.querySelector('.copyable-text'),
-        ];
-        for (const el of picks) {
-          if (el) { text = el.textContent.trim(); if (text) break; }
-        }
-        if (!text || text.length > 2000) return;
-
-        // Time: data-pre-plain-text="[5:16 PM, 1/1/2024] Name: "
-        let timeStr = '';
-        const prePlain = msg.getAttribute('data-pre-plain-text') ||
-                         msg.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || '';
-        if (prePlain) {
-          const tm = prePlain.match(/\\[(\\d{1,2}:\\d{2}[^\\]]*)/);
-          if (tm) timeStr = tm[1].trim();
-        }
-        if (!timeStr) {
-          const metaEl = msg.querySelector('[data-testid="msg-meta"]');
-          const tm2 = (metaEl?.textContent || '').match(/\\d{1,2}:\\d{2}\\s*[APap][Mm]?/);
-          if (tm2) timeStr = tm2[0];
-        }
-
-        // isOut: data-id "true_xxx" = sent by us
-        const dataId = msg.getAttribute('data-id') || '';
-        const isOut  = dataId.startsWith('true_') ||
-                       !!msg.querySelector('[data-testid="msg-dblcheck"]') ||
-                       !!msg.querySelector('[data-testid="msg-check"]') ||
-                       msg.className.includes('message-out');
-
-        messages.push({ text, time: timeStr, isOut });
-      });
-    }
-
-    // ── Current chat name ──
-    const chatEl =
-      document.querySelector('[data-testid="conversation-header"] span[dir="auto"]') ||
-      document.querySelector('[data-testid="conversation-header"] span[title]') ||
-      document.querySelector('#main header span[dir="auto"]');
-
-    // ── Is logged in? ──
-    const isLoggedIn =
-      contacts.length > 0 ||
-      !!document.getElementById('side') ||
-      !!document.querySelector('[data-testid="chat-list"]') ||
-      !!document.querySelector('[aria-label*="Chat list"]');
-
-    const mainEl2 = document.getElementById('main');
-    return {
-      ok:          true,
-      contacts,
-      messages,
-      chatName:    chatEl?.textContent?.trim() || '',
-      isLoggedIn,
-      cellSel:     cells.length > 0 ? 'found ' + cells.length : 'none',
-      mainExists:  !!mainEl2,
-      mainDataIds: mainEl2 ? mainEl2.querySelectorAll('[data-id]').length : 0,
-      mainMsgCont: mainEl2 ? mainEl2.querySelectorAll('[data-testid="msg-container"]').length : 0,
-      mainSelText: mainEl2 ? mainEl2.querySelectorAll('span.selectable-text').length : 0,
-    };
+    return { ok: true, contacts, chatName: chatEl?.textContent?.trim() || '', isLoggedIn };
   } catch(e) {
-    return { ok: false, error: e.message, stack: e.stack };
+    return { ok: false, error: e.message };
   }
 })()
 `;
 
-// ── Periodic data loop ────────────────────────────────────────────────────────
-async function extractAndSend() {
+// ── Contact scrape loop ───────────────────────────────────────────────────────
+async function scrapeContacts() {
   if (!waWindow || waWindow.isDestroyed()) return;
   if (!icqWindow || icqWindow.isDestroyed()) return;
   try {
-    const data = await waWindow.webContents.executeJavaScript(SCRAPER);
-    if (!data?.ok) {
-      console.error('[ICQ] scrape error:', data?.error);
-      return;
-    }
+    const data = await waWindow.webContents.executeJavaScript(CONTACT_SCRAPER);
+    if (!data?.ok) return;
 
-    // First time we get contacts → send 'ready'
     if (data.isLoggedIn && !statusSent) {
       statusSent = true;
       icqWindow.webContents.send('wa-status', { status: 'ready' });
-      console.log('[ICQ] WA logged in, contacts:', data.contacts.length, 'sel:', data.cellSel);
+      console.log('[ICQ] WA ready — contacts:', data.contacts.length);
     }
-    // Log message debug info
-    if (data.chatName) {
-      console.log(`[ICQ] Chat="${data.chatName}" msgs=${data.messages.length} main=${data.mainExists} dataIds=${data.mainDataIds} msgCont=${data.mainMsgCont} selText=${data.mainSelText}`);
-    }
-
     icqWindow.webContents.send('wa-data', data);
-  } catch (e) {
-    console.error('[ICQ] extractAndSend error:', e.message);
-  }
+  } catch (e) { console.error('[ICQ] scrapeContacts error:', e.message); }
 }
 
-function startDataLoop() {
-  if (dataTimer) return;
-  console.log('[ICQ] Data loop started');
-  extractAndSend(); // immediately
-  dataTimer = setInterval(extractAndSend, 2000);
+function startContactLoop() {
+  if (contactTimer) return;
+  scrapeContacts();
+  contactTimer = setInterval(scrapeContacts, 2000);
 }
 
-// ── Hidden WhatsApp window ────────────────────────────────────────────────────
+// ── Screenshot capture (for messages) ────────────────────────────────────────
+async function captureChat() {
+  if (!waWindow || waWindow.isDestroyed()) return;
+  if (!icqWindow || icqWindow.isDestroyed()) return;
+  try {
+    // Get #main bounding box for cropping to just the chat panel
+    const rect = await waWindow.webContents.executeJavaScript(`
+      (function(){
+        const m = document.getElementById('main');
+        if (!m) return null;
+        const r = m.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y),
+                 width: Math.round(r.width), height: Math.round(r.height) };
+      })()
+    `);
+    if (!rect || rect.width < 10 || rect.height < 10) {
+      console.log('[ICQ] #main not found or too small:', rect);
+      return;
+    }
+
+    const img = await waWindow.webContents.capturePage(rect);
+    if (img.isEmpty()) { console.log('[ICQ] capturePage returned empty'); return; }
+
+    // Resize for efficiency
+    const resized = img.resize({ width: Math.min(rect.width, 900), quality: 'good' });
+    const b64 = resized.toPNG().toString('base64');
+    icqWindow.webContents.send('wa-chat-img', 'data:image/png;base64,' + b64);
+  } catch (e) { console.error('[ICQ] captureChat error:', e.message); }
+}
+
+function startCapture() {
+  captureChat(); // immediately
+  if (screenTimer) return;
+  screenTimer = setInterval(captureChat, 1500);
+}
+
+function stopCapture() {
+  if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
+}
+
+// ── Hidden (but rendered) WhatsApp window ────────────────────────────────────
 function createWaWindow() {
-  // Patch the persist:whatsapp session BEFORE creating the window
   try {
     const waSess = session.fromPartition('persist:whatsapp');
     patchSession(waSess);
@@ -226,6 +162,7 @@ function createWaWindow() {
 
   waWindow = new BrowserWindow({
     width: 1280, height: 900,
+    skipTaskbar: true,   // don't show in Windows taskbar
     show: false,
     webPreferences: {
       contextIsolation: false,
@@ -235,33 +172,33 @@ function createWaWindow() {
   });
 
   waWindow.webContents.setUserAgent(WA_UA);
+  waWindow.webContents.setBackgroundThrottling(false);
+
+  // Make it invisible but RENDERED so virtual scroll & capturePage work
+  waWindow.setOpacity(0);
+  waWindow.showInactive();  // show without stealing focus
+
+  // Force a real viewport so virtual scrolling renders items
+  waWindow.webContents.enableDeviceEmulation({
+    screenPosition:    'desktop',
+    screenSize:        { width: 1280, height: 900 },
+    viewPosition:      { x: 0, y: 0 },
+    deviceScaleFactor: 1,
+    viewSize:          { width: 1280, height: 900 },
+    fitToView:         false,
+  });
+
+  waWindow.webContents.setUserAgent(WA_UA);
   waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
 
-  // Force a real viewport + disable throttling so virtual scroll renders items
-  waWindow.webContents.setBackgroundThrottling(false);
-  waWindow.setSize(1280, 900);
-  waWindow.webContents.enableDeviceEmulation({
-    screenPosition:   'desktop',
-    screenSize:       { width: 1280, height: 900 },
-    viewPosition:     { x: 0, y: 0 },
-    deviceScaleFactor: 1,
-    viewSize:         { width: 1280, height: 900 },
-    fitToView:        false,
+  waWindow.webContents.on('did-fail-load', (e, code, desc) => {
+    console.error('[ICQ] WA load failed:', code, desc);
+    icqWindow?.webContents.send('wa-status', { status: 'needsLogin' });
   });
 
-  // Log any load errors
-  waWindow.webContents.on('did-fail-load', (e, code, desc, url) => {
-    console.error('[ICQ] WA load failed:', code, desc, url);
-    icqWindow?.webContents.send('wa-status', {
-      status: 'needsLogin',
-      msg: `WhatsApp failed to load (${code}). Click "Sign in" to retry.`,
-    });
-  });
-
-  // Start data loop 5s after WA finishes loading (give React time to mount)
-  const startAfterLoad = () => {
-    console.log('[ICQ] WA page loaded — forcing viewport + starting scrape in 5s');
-    // Nudge the virtual scroll list to render items
+  const onLoaded = () => {
+    console.log('[ICQ] WA page loaded — nudging virtual scroll in 4s, scraping in 5s');
+    // Nudge contact list virtual scroll
     setTimeout(() => {
       waWindow.webContents.executeJavaScript(`
         (function(){
@@ -277,9 +214,8 @@ function createWaWindow() {
         })()
       `).catch(() => {});
     }, 4000);
-    setTimeout(startDataLoop, 5000);
-
-    // After 20s, if still not logged in, tell ICQ to show sign-in button
+    setTimeout(startContactLoop, 5000);
+    // If no contacts after 20s, show sign-in
     setTimeout(() => {
       if (!statusSent) {
         console.log('[ICQ] No contacts after 20s — prompting sign-in');
@@ -288,64 +224,34 @@ function createWaWindow() {
     }, 20000);
   };
 
-  waWindow.webContents.on('did-finish-load', startAfterLoad);
-
-  // Fallback: also start on did-stop-loading in case did-finish-load doesn't fire
-  let loopStarted = false;
-  waWindow.webContents.on('did-stop-loading', () => {
-    if (!loopStarted) { loopStarted = true; startAfterLoad(); }
-  });
-
+  let loaded = false;
+  waWindow.webContents.on('did-finish-load',  () => { if (!loaded) { loaded = true; onLoaded(); } });
+  waWindow.webContents.on('did-stop-loading', () => { if (!loaded) { loaded = true; onLoaded(); } });
   waWindow.on('closed', () => { waWindow = null; });
 }
 
 // ── IPC: show WA window for QR scan ──────────────────────────────────────────
 ipcMain.on('wa-show', () => {
   if (!waWindow || waWindow.isDestroyed()) return;
+  waWindow.setOpacity(1);
   waWindow.show();
   waWindow.focus();
-  // Poll for login every 3s, hide once confirmed
   const poll = setInterval(async () => {
     if (!waWindow || waWindow.isDestroyed()) { clearInterval(poll); return; }
     try {
       const ok = await waWindow.webContents.executeJavaScript(
-        `!!(document.getElementById('side') || document.querySelectorAll('[data-testid^="cell-frame"]').length > 0 || document.querySelector('[aria-label*="Chat list"]'))`
+        `!!(document.getElementById('side') || document.querySelector('[aria-label*="Chat list"]'))`
       );
       if (ok) {
         clearInterval(poll);
-        waWindow.hide();
-        statusSent = false; // allow ready to be sent again
-        if (!dataTimer) startDataLoop();
+        waWindow.setOpacity(0);
+        waWindow.blur();
+        statusSent = false;
+        startContactLoop();
       }
     } catch (_) {}
   }, 3000);
 });
-
-// ── Force-render message virtual scroll (same trick as contacts) ──────────────
-async function forceRenderMessages() {
-  if (!waWindow || waWindow.isDestroyed()) return;
-  try {
-    await waWindow.webContents.executeJavaScript(`
-      (function(){
-        // Find the messages scroll container and nudge it
-        const containers = [
-          document.querySelector('[data-testid="conversation-panel-messages"]'),
-          document.querySelector('#main .copyable-area'),
-          document.querySelector('#main > div:nth-child(2)'),
-          document.querySelector('#main'),
-        ].filter(Boolean);
-        containers.forEach(c => {
-          const h = c.scrollHeight;
-          c.scrollTop = h;
-          c.dispatchEvent(new Event('scroll', {bubbles:true}));
-          c.scrollTop = Math.max(0, h - 10);
-          c.dispatchEvent(new Event('scroll', {bubbles:true}));
-        });
-        window.dispatchEvent(new Event('resize'));
-      })()
-    `);
-  } catch (e) { console.error('[ICQ] forceRenderMessages error:', e.message); }
-}
 
 // ── IPC: click a contact ──────────────────────────────────────────────────────
 ipcMain.on('wa-click-contact', async (e, index) => {
@@ -368,9 +274,8 @@ ipcMain.on('wa-click-contact', async (e, index) => {
         if (cells[${i}]) cells[${i}].click();
       })()
     `);
-    // After WA opens the chat, force the message virtual scroll to render
-    setTimeout(forceRenderMessages, 1200);
-    setTimeout(forceRenderMessages, 2500); // second nudge in case first was too early
+    // Give WA time to open the chat, then start screenshotting
+    setTimeout(startCapture, 1500);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
 
@@ -389,7 +294,7 @@ ipcMain.on('wa-send-message', async (e, text) => {
         input.focus();
         document.execCommand('selectAll', false, null);
         document.execCommand('delete',    false, null);
-        document.execCommand('insertText',false, ${escaped});
+        document.execCommand('insertText', false, ${escaped});
         setTimeout(() => {
           const btn =
             document.querySelector('[data-testid="send"]') ||
@@ -410,7 +315,7 @@ ipcMain.on('win-maximize', () => {
 });
 ipcMain.on('win-close', () => app.quit());
 
-// ── ICQ (visible) window ──────────────────────────────────────────────────────
+// ── ICQ visible window ────────────────────────────────────────────────────────
 function createIcqWindow() {
   icqWindow = new BrowserWindow({
     width: 1100, height: 780,
@@ -428,8 +333,8 @@ function createIcqWindow() {
 
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'ICQ', submenu: [
-      { label: 'Show WhatsApp window', click: () => { waWindow?.show(); waWindow?.focus(); } },
-      { label: 'Reload WhatsApp',      click: () => { statusSent = false; waWindow?.webContents.reload(); } },
+      { label: 'Show WhatsApp window', click: () => { waWindow?.setOpacity(1); waWindow?.show(); waWindow?.focus(); } },
+      { label: 'Reload WhatsApp',      click: () => { statusSent = false; stopCapture(); waWindow?.webContents.reload(); } },
       { type: 'separator' },
       { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
     ]},
@@ -444,7 +349,6 @@ function createIcqWindow() {
 app.whenReady().then(() => {
   patchSession(session.defaultSession);
   app.on('session-created', patchSession);
-
   createIcqWindow();
   createWaWindow();
 });

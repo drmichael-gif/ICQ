@@ -97,27 +97,26 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
 }
 .udlbl { font-weight: bold; color: #000000; }
 
-/* Message log */
+/* Message log — now shows WA screenshot */
 #log {
   flex: 1; min-height: 0;
   margin: 0 5px;
   border: 2px solid; border-color: #808080 #FFFFFF #FFFFFF #808080;
   background: #FFFFFF;
   overflow-y: auto;
-  padding: 4px 6px;
+  padding: 0;
+  position: relative;
 }
-/* ── All text in log must be explicitly colored ── */
-#log * { color: #000000; font-family: 'Tahoma','MS Sans Serif','Arial',sans-serif; font-size: 11px; }
-.mpfx {
-  font-weight: bold;
-  color: #000080 !important;
-  display: block;
-  margin-top: 4px;
+/* Screenshot image fills the whole log area */
+#chat-img {
+  display: none;
+  width: 100%;
+  height: auto;
+  min-height: 100%;
+  object-fit: cover;
+  vertical-align: top;
+  border: 0;
 }
-.mpfx.out { color: #000080 !important; }
-.mpfx.in  { color: #B00000 !important; }
-.mtxt { color: #000000 !important; display: block; padding-left: 2px; margin-bottom: 2px; }
-.mday { color: #808080 !important; font-size: 10px; display: block; text-align: center; margin: 6px 0 2px; border-top: 1px solid #C0C0C0; padding-top: 4px; }
 
 /* Welcome / status area inside log */
 #welcome {
@@ -314,9 +313,10 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
       </div>
     </fieldset>
 
-    <!-- Message log -->
+    <!-- Message log — shows WA screenshot when chat is open -->
     <div id="log">
-      <div id="welcome">
+      <!-- Welcome / connecting state -->
+      <div id="welcome" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px">
         <div class="ico">🌸</div>
         <div class="ttl">ICQ</div>
         <div class="sub" id="status-lbl">Connecting to WhatsApp…</div>
@@ -326,6 +326,8 @@ fieldset#udet legend { font-size: 10px; color: #000000; padding: 0 3px; }
           </button>
         </div>
       </div>
+      <!-- Live screenshot of WhatsApp chat panel -->
+      <img id="chat-img" alt="chat" />
     </div>
 
     <!-- Send bar -->
@@ -387,7 +389,7 @@ const $ = id => document.getElementById(id);
 const bridge = window.icq; // exposed by preload.js
 
 // ── State ──────────────────────────────────────────────────────────────────
-let contacts = [], messages = [], chatName = '', selIdx = -1, lastMsgLen = 0;
+let contacts = [], chatName = '', selIdx = -1;
 
 // ── Window controls ────────────────────────────────────────────────────────
 $('btn-min').onclick   = () => bridge.minimize();
@@ -412,19 +414,9 @@ $('btn-signin').onclick = () => bridge.showWa();
 
 // ── Data from main (every 2s) ──────────────────────────────────────────────
 bridge.onData(d => {
-  contacts  = d.contacts || [];
-  messages  = d.messages || [];
-  chatName  = d.chatName || '';
-
+  contacts = d.contacts || [];
+  chatName = d.chatName || '';
   renderCL();
-
-  // Update messages if:
-  // - count changed (new messages arrived)
-  // - we have a selected contact and chatName matches (clear "Loading...")
-  const hasChatOpen = selIdx >= 0;
-  if (hasChatOpen && (messages.length !== lastMsgLen || (chatName && messages.length === 0))) {
-    renderMsgs();
-  }
 });
 
 // ── Render contact list ────────────────────────────────────────────────────
@@ -456,67 +448,56 @@ function selectContact(i) {
   const c = contacts[i];
   if (!c) return;
   bridge.clickContact(i);
+
   // Update chat title & nick immediately
   $('chat-tb-title').textContent = c.name + ' Message Dialog';
   $('ud-nick').textContent = c.name;
   chatName = c.name;
-  // Hide welcome, clear log, show loading
-  const log = $('log');
-  log.innerHTML = '<div style="padding:6px;color:#808080;font-size:11px">Loading messages…</div>';
-  lastMsgLen = 0;
-  renderCL(); // re-render to show active state
-}
 
-// ── Render messages ────────────────────────────────────────────────────────
-function renderMsgs() {
-  lastMsgLen = messages.length;
-  const log = $('log');
+  // Hide welcome, clear old screenshot, show loading hint
   const wc  = $('welcome');
-  if (wc) wc.remove();
-
-  if (!messages.length) {
-    log.innerHTML = '<div style="padding:8px;color:#808080;font-size:11px">No messages loaded yet — WhatsApp may still be opening this chat.</div>';
-    return;
+  const img = $('chat-img');
+  if (wc)  { wc.style.display = 'none'; }
+  if (img) { img.style.display = 'none'; img.src = ''; }
+  // Show a loading label while waiting for first screenshot
+  const log = $('log');
+  let ldr = $('chat-loading');
+  if (!ldr) {
+    ldr = document.createElement('div');
+    ldr.id = 'chat-loading';
+    ldr.style.cssText = 'padding:10px;color:#808080;font-size:11px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)';
+    ldr.textContent = 'Loading chat…';
+    log.appendChild(ldr);
   }
+  ldr.style.display = 'block';
 
-  const atBot = log.scrollHeight - log.scrollTop - log.clientHeight < 50;
-  let h = '';
-  messages.forEach(m => {
-    const who = m.isOut ? 'You' : esc(chatName || 'Contact');
-    const tm  = m.time ? ` [${esc(m.time)}]` : '';
-    const cls = m.isOut ? 'out' : 'in';
-    h += `<span class="mpfx ${cls}">${who}${tm}:</span><span class="mtxt">${esc(m.text)}</span>`;
-  });
-  log.innerHTML = h;
-  if (atBot) log.scrollTop = log.scrollHeight;
+  renderCL();
 }
+
+// ── Screenshot of WA chat panel ────────────────────────────────────────────
+bridge.onChatImg(src => {
+  const img = $('chat-img');
+  const ldr = $('chat-loading');
+  const wc  = $('welcome');
+  if (img) {
+    img.src = src;
+    img.style.display = 'block';
+  }
+  if (ldr) ldr.style.display = 'none';
+  if (wc)  wc.style.display  = 'none';
+  // Scroll to bottom
+  const log = $('log');
+  log.scrollTop = log.scrollHeight;
+});
 
 // ── Send message ───────────────────────────────────────────────────────────
 function doSend() {
   const txt = $('input').value.trim();
   if (!txt || selIdx < 0) return;
   bridge.sendMessage(txt);
-
-  // Optimistic add
-  const log = $('log');
-  const wc  = $('welcome');
-  if (wc) wc.remove();
-
-  const now = new Date();
-  const h = now.getHours() % 12 || 12;
-  const m = String(now.getMinutes()).padStart(2,'0');
-  const ap = now.getHours() >= 12 ? 'PM' : 'AM';
-  const line = document.createElement('span');
-  line.className = 'mpfx out';
-  line.textContent = `You [${h}:${m} ${ap}]:`;
-  const body = document.createElement('span');
-  body.className = 'mtxt';
-  body.textContent = txt;
-  log.appendChild(line);
-  log.appendChild(body);
-  log.scrollTop = log.scrollHeight;
   $('input').value = '';
   updateLen();
+  // Screenshot will update within 1.5s showing the sent message
 }
 
 $('btn-send').onclick = doSend;
