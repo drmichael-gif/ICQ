@@ -412,11 +412,19 @@ $('btn-signin').onclick = () => bridge.showWa();
 
 // ── Data from main (every 2s) ──────────────────────────────────────────────
 bridge.onData(d => {
-  contacts = d.contacts || [];
-  messages = d.messages || [];
-  chatName = d.chatName || '';
+  contacts  = d.contacts || [];
+  messages  = d.messages || [];
+  chatName  = d.chatName || '';
+
   renderCL();
-  if (chatName && messages.length !== lastMsgLen) renderMsgs();
+
+  // Update messages if:
+  // - count changed (new messages arrived)
+  // - we have a selected contact and chatName matches (clear "Loading...")
+  const hasChatOpen = selIdx >= 0;
+  if (hasChatOpen && (messages.length !== lastMsgLen || (chatName && messages.length === 0))) {
+    renderMsgs();
+  }
 });
 
 // ── Render contact list ────────────────────────────────────────────────────
@@ -461,20 +469,22 @@ function selectContact(i) {
 
 // ── Render messages ────────────────────────────────────────────────────────
 function renderMsgs() {
-  if (!messages.length) return;
   lastMsgLen = messages.length;
-
   const log = $('log');
-  // Hide welcome if still showing
-  const wc = $('welcome');
+  const wc  = $('welcome');
   if (wc) wc.remove();
+
+  if (!messages.length) {
+    log.innerHTML = '<div style="padding:8px;color:#808080;font-size:11px">No messages loaded yet — WhatsApp may still be opening this chat.</div>';
+    return;
+  }
 
   const atBot = log.scrollHeight - log.scrollTop - log.clientHeight < 50;
   let h = '';
   messages.forEach(m => {
-    const who  = m.isOut ? 'You' : esc(chatName);
-    const tm   = m.time  ? ` [${esc(m.time)}]` : '';
-    const cls  = m.isOut ? 'out' : 'in';
+    const who = m.isOut ? 'You' : esc(chatName || 'Contact');
+    const tm  = m.time ? ` [${esc(m.time)}]` : '';
+    const cls = m.isOut ? 'out' : 'in';
     h += `<span class="mpfx ${cls}">${who}${tm}:</span><span class="mtxt">${esc(m.text)}</span>`;
   });
   log.innerHTML = h;

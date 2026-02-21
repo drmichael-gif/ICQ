@@ -79,33 +79,56 @@ const SCRAPER = `
     });
 
     // ── MESSAGES: current open chat ──
+    // WhatsApp gives every message a data-id like "true_xxx" (sent) or "false_xxx" (received)
     const messages = [];
-    const msgSels = [
-      '.message-in, .message-out',
-      '[class*="message-in"], [class*="message-out"]',
-      '[data-id][role="row"]',
-    ];
-    let msgEls = [];
-    for (const s of msgSels) {
-      msgEls = Array.from(document.querySelectorAll(s));
-      if (msgEls.length > 0) break;
+    let msgEls = Array.from(document.querySelectorAll('[data-id]'));
+
+    // Fallback selectors if data-id doesn't work
+    if (!msgEls.length) {
+      const fallbacks = [
+        '[data-testid="msg-container"]',
+        '.message-in, .message-out',
+        '[class*="message-in"], [class*="message-out"]',
+        '#main [tabindex="-1"][data-id]',
+        '#main [role="row"]',
+      ];
+      for (const s of fallbacks) {
+        try { msgEls = Array.from(document.querySelectorAll(s)); } catch(_) {}
+        if (msgEls.length) break;
+      }
     }
-    msgEls.forEach(msg => {
-      const textEl =
-        msg.querySelector('span.selectable-text') ||
-        msg.querySelector('[data-testid="balloon-text"] span') ||
-        msg.querySelector('[data-testid="balloon-text"]') ||
-        msg.querySelector('span[class*="selectable"]');
-      if (!textEl) return;
-      const text = textEl.textContent.trim();
+
+    msgEls.slice(-80).forEach(msg => {  // last 80 messages max
+      // Extract text — try every known location
+      let text = '';
+      const textCandidates = [
+        msg.querySelector('[data-testid="balloon-text"] span.selectable-text'),
+        msg.querySelector('[data-testid="balloon-text"] span'),
+        msg.querySelector('[data-testid="balloon-text"]'),
+        msg.querySelector('span.selectable-text.copyable-text'),
+        msg.querySelector('span[class*="selectable-text"]'),
+        msg.querySelector('.copyable-text'),
+      ];
+      for (const el of textCandidates) {
+        if (el) { text = el.textContent.trim(); if (text) break; }
+      }
       if (!text) return;
+      if (text.length > 2000) return; // skip huge blobs
+
+      // Time
       const timeEl = msg.querySelector('[data-testid="msg-meta"]') ||
+                     msg.querySelector('[data-pre-plain-text]') ||
                      msg.querySelector('span[class*="timestamp"]');
       const timeStr = (timeEl?.textContent || '').match(/\\d{1,2}:\\d{2}\\s*[APap][Mm]?/)?.[0] || '';
-      const isOut = msg.classList.contains('message-out') ||
-                    msg.className.includes('message-out') ||
-                    !!msg.querySelector('[data-testid="msg-dblcheck"]') ||
-                    !!msg.querySelector('[data-testid="msg-check"]');
+
+      // isOut: data-id starts with "true_" = sent by us
+      const dataId  = msg.getAttribute('data-id') || '';
+      const isOut   = dataId.startsWith('true_') ||
+                      msg.classList.contains('message-out') ||
+                      msg.className.includes('message-out') ||
+                      !!msg.querySelector('[data-testid="msg-dblcheck"]') ||
+                      !!msg.querySelector('[data-testid="msg-check"]');
+
       messages.push({ text, time: timeStr, isOut });
     });
 
