@@ -139,11 +139,25 @@ function startContactLoop() {
 const MESSAGE_SCRAPER = `
 (function() {
   try {
-    const main = document.getElementById('main');
+    // WhatsApp 2024 may not use #main — try several selectors
+    const main =
+      document.getElementById('main') ||
+      document.querySelector('[data-testid="conversation-panel"]') ||
+      document.querySelector('[data-testid="conversation-compose-box"]')?.closest('div[role]') ||
+      document.querySelector('[data-testid="msg-container"]')?.closest('[id],[role="region"],[role="main"]') ||
+      document.querySelector('div[data-tab="8"]') ||
+      document.querySelector('div[data-tab="7"]') ||
+      null;
+
     if (!main) {
-      console.log('[ICQ msg] no #main element');
-      return { ok: false, error: 'no #main' };
+      console.log('[ICQ msg] no chat panel found (tried #main + 5 fallbacks)');
+      // Log ALL data-testid values on the page to help debug
+      const pageTestIds = [...new Set(Array.from(document.querySelectorAll('[data-testid]'))
+        .map(el => el.getAttribute('data-testid')).filter(Boolean))].slice(0, 40);
+      console.log('[ICQ msg] page testids:', pageTestIds.join(', '));
+      return { ok: false, error: 'no chat panel' };
     }
+    console.log('[ICQ msg] chat panel found:', main.id || main.getAttribute('data-testid') || main.tagName);
 
     // ── Diagnostic: log what's in #main ──
     const allTestIds = [...new Set(Array.from(main.querySelectorAll('[data-testid]'))
@@ -379,8 +393,10 @@ ipcMain.on('wa-click-contact', async (e, index) => {
   const i = index | 0;
   stopMsgLoop();
   try {
-    // Get the center coordinates of the cell (viewport-relative)
-    const rect = await waWindow.webContents.executeJavaScript(`
+    // Dispatch the FULL pointer+mouse event sequence that React requires.
+    // React's event system listens at document root (bubbling) — dispatching
+    // with correct clientX/Y + bubbles:true guarantees it fires React's handler.
+    const result = await waWindow.webContents.executeJavaScript(`
       (function(){
         const sels = [
           '[data-testid="cell-frame-container"]',
@@ -395,35 +411,45 @@ ipcMain.on('wa-click-contact', async (e, index) => {
           if (cells.length > 0) break;
         }
         const cell = cells[${i}];
-        if (!cell) return null;
-        const r = cell.getBoundingClientRect();
-        return {
-          x: Math.round(r.left + r.width / 2),
-          y: Math.round(r.top  + r.height / 2),
-          name: cell.textContent?.slice(0, 40) || '',
-          total: cells.length
-        };
+        if (!cell) return { ok: false, total: cells.length };
+
+        const r  = cell.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top  + r.height / 2;
+
+        const mo = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy };
+        const po = { ...mo, isPrimary: true, pointerId: 1, pointerType: 'mouse' };
+
+        // Full sequence: pointer events + mouse events (React needs both)
+        cell.dispatchEvent(new PointerEvent('pointerover',  po));
+        cell.dispatchEvent(new MouseEvent('mouseover',      mo));
+        cell.dispatchEvent(new PointerEvent('pointermove',  po));
+        cell.dispatchEvent(new MouseEvent('mousemove',      mo));
+        cell.dispatchEvent(new PointerEvent('pointerdown',  po));
+        cell.dispatchEvent(new MouseEvent('mousedown',      mo));
+        cell.dispatchEvent(new PointerEvent('pointerup',    po));
+        cell.dispatchEvent(new MouseEvent('mouseup',        mo));
+        cell.dispatchEvent(new MouseEvent('click',          mo));
+
+        return { ok: true, total: cells.length, name: cell.textContent?.slice(0,40) };
       })()`);
 
-    if (rect) {
-      console.log('[ICQ] clicking contact', i, rect.name, 'at', rect.x, rect.y, '(total:', rect.total + ')');
-      // Send REAL mouse events — more reliable than element.click() with React
-      waWindow.webContents.sendInputEvent({ type: 'mouseMove',  x: rect.x, y: rect.y });
-      waWindow.webContents.sendInputEvent({ type: 'mouseDown',  x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
-      waWindow.webContents.sendInputEvent({ type: 'mouseUp',    x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
-    } else {
-      console.warn('[ICQ] cell not found at index', i, '— falling back to JS click');
-      await waWindow.webContents.executeJavaScript(`
-        (function(){
-          const sels = ['[data-testid="cell-frame-container"]','[data-testid^="cell-frame"]',
-            '#side [role="listitem"]','[aria-label*="Chat list"] [role="listitem"]'];
-          let cells = [];
-          for (const s of sels) { cells = Array.from(document.querySelectorAll(s)); if (cells.length) break; }
-          if (cells[${i}]) cells[${i}].click();
-        })()`);
-    }
+    console.log('[ICQ] contact click result:', JSON.stringify(result));
 
-    // Wait 2s for WA to open chat, then start scraping every 1.5s
+    // Check if #main (or equivalent) appeared after the click
+    setTimeout(async () => {
+      try {
+        const state = await waWindow.webContents.executeJavaScript(`
+          (function(){
+            const main = document.getElementById('main') ||
+                         document.querySelector('[data-testid="conversation-panel"]') ||
+                         document.querySelector('[data-testid="conversation-compose-box"]');
+            return { hasMain: !!main, mainId: main?.id || main?.getAttribute('data-testid') || 'found-no-id' };
+          })()`);
+        console.log('[ICQ] chat panel check (3s after click):', JSON.stringify(state));
+      } catch(_) {}
+    }, 3000);
+
     setTimeout(startMsgLoop, 2000);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
