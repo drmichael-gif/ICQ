@@ -1,16 +1,19 @@
 /**
- * preload.js — runs in the main BrowserWindow (app.html)
- * Exposes IPC bridges via contextBridge (contextIsolation: true)
+ * preload.js — bridge for app.html (ICQ UI)
  */
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('icqBridge', {
-  // Window controls
-  minimize: () => ipcRenderer.send('win-minimize'),
-  maximize: () => ipcRenderer.send('win-maximize'),
-  close:    () => ipcRenderer.send('win-close'),
+contextBridge.exposeInMainWorld('icq', {
+  // Window chrome
+  minimize:     () => ipcRenderer.send('win-minimize'),
+  maximize:     () => ipcRenderer.send('win-maximize'),
+  close:        () => ipcRenderer.send('win-close'),
 
-  // Get the WhatsApp CSS/JS from main process (reads files fresh each time)
-  getWaCss: () => ipcRenderer.invoke('get-wa-css'),
-  getWaJs:  () => ipcRenderer.invoke('get-wa-js'),
+  // User actions → hidden WhatsApp
+  clickContact: (index) => ipcRenderer.send('wa-click-contact', index),
+  sendMessage:  (text)  => ipcRenderer.send('wa-send-message', text),
+
+  // Data from hidden WhatsApp → ICQ UI
+  onData:   (cb) => ipcRenderer.on('wa-data',   (e, d) => cb(d)),
+  onStatus: (cb) => ipcRenderer.on('wa-status', (e, d) => cb(d)),
 });
