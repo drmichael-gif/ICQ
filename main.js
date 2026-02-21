@@ -141,29 +141,77 @@ async function captureChat() {
   if (!waWindow || waWindow.isDestroyed()) return;
   if (!icqWindow || icqWindow.isDestroyed()) return;
   try {
-    // Get #main position, fall back to right 66% of window if missing
+    // ── Find the chat panel + extract its text ────────────────────────────
     const info = await waWindow.webContents.executeJavaScript(`
       (function(){
-        const m = document.getElementById('main');
+        // Try multiple selectors for the chat panel (WA changes testids often)
+        const panelSels = [
+          '#main',
+          '[data-testid="conversation-panel-wrapper"]',
+          '[data-testid="conversation-panel"]',
+          '[data-testid="conversation-header"]',   // if header exists, panel is open
+          '.two [id="main"]',
+        ];
+        let panel = null;
+        for (const s of panelSels) {
+          const el = document.querySelector(s);
+          if (el && el.offsetWidth > 100) { panel = el; break; }
+        }
+
         const ws = { w: window.innerWidth, h: window.innerHeight };
-        if (!m) return { found: false, ws };
-        const r = m.getBoundingClientRect();
-        return { found: true, ws,
-                 x: Math.round(r.x), y: Math.round(r.y),
-                 width: Math.round(r.width), height: Math.round(r.height) };
+
+        // Also get innerText from the message list specifically
+        const msgSels = [
+          '#main .message-list',
+          '#main [data-testid="msg-container"]',
+          '#main [role="application"]',
+          '#main',
+          '[data-testid="conversation-panel-wrapper"]',
+          '[data-testid="conversation-panel"]',
+        ];
+        let text = '';
+        for (const s of msgSels) {
+          const el = document.querySelector(s);
+          if (el && el.innerText && el.innerText.trim().length > 10) {
+            text = el.innerText;
+            break;
+          }
+        }
+
+        // Debug: what testids exist?
+        const allTids = [...new Set(
+          Array.from(document.querySelectorAll('[data-testid]'))
+            .map(el => el.getAttribute('data-testid'))
+        )].filter(Boolean).sort();
+
+        if (!panel) {
+          return { found: false, ws, text, allTids: allTids.slice(0,30) };
+        }
+        const r = panel.getBoundingClientRect();
+        return {
+          found: true, ws, text,
+          x: Math.round(r.x), y: Math.round(r.y),
+          width: Math.round(r.width), height: Math.round(r.height),
+        };
       })()`);
 
-    console.log('[ICQ] captureChat info:', JSON.stringify(info));
+    // Log useful debug info (only when text length changes to avoid spamming)
+    if (!captureChat._lastLen || Math.abs(info.text.length - captureChat._lastLen) > 5) {
+      console.log('[ICQ] capture: found=%s textLen=%d ws=%dx%d',
+        info?.found, info?.text?.length || 0, info?.ws?.w, info?.ws?.h);
+      if (!info?.found) {
+        console.log('[ICQ] panel not found. testids:', (info?.allTids || []).join(', '));
+      }
+      captureChat._lastLen = info?.text?.length || 0;
+    }
 
+    // ── Screenshot ────────────────────────────────────────────────────────
     let img;
     if (info?.found && info.width > 10 && info.height > 10) {
-      // Capture just the #main panel
       img = await waWindow.webContents.capturePage({
         x: info.x, y: info.y, width: info.width, height: info.height
       });
     } else {
-      // Fallback: capture full window (shows whole WA interface — still useful)
-      console.log('[ICQ] #main not ready, capturing full window');
       img = await waWindow.webContents.capturePage();
     }
 
@@ -171,24 +219,16 @@ async function captureChat() {
       console.log('[ICQ] capturePage returned empty image');
       return;
     }
+
     const sz      = img.getSize();
     const resized = img.resize({ width: Math.min(sz.width, 900), quality: 'good' });
     const b64     = 'data:image/png;base64,' + resized.toPNG().toString('base64');
+    const waText  = info?.text || '';
 
-    // Also grab the DOM text from #main for OCR window to parse
-    let waText = '';
-    try {
-      waText = await waWindow.webContents.executeJavaScript(
-        `(document.getElementById('main')||document.querySelector('[data-testid="conversation-panel"]')||{innerText:''}).innerText`
-      ) || '';
-    } catch(_) {}
-    console.log('[ICQ] innerText chars:', waText.length);
-
-    // Send to OCR window for text extraction; it will relay messages or screenshot back
+    // ── Send to OCR window ────────────────────────────────────────────────
     if (ocrWindow && !ocrWindow.isDestroyed()) {
       ocrWindow.webContents.send('analyze', { screenshot: b64, waText });
     } else {
-      // OCR window not ready — show screenshot directly (original behaviour)
       icqWindow.webContents.send('wa-chat-img', b64);
     }
   } catch (e) { console.error('[ICQ] captureChat error:', e.message, e.stack); }
@@ -380,102 +420,160 @@ ipcMain.on('wa-show', () => {
   }, 3000);
 });
 
-// ── Helper: resolve common cell selector list ─────────────────────────────────
-const CELL_SELS_JS = `
-  (function getCells() {
-    const sels = [
-      '[data-testid="cell-frame-container"]',
-      '[data-testid^="cell-frame"]',
-      '[data-testid="chat-list-item"]',
-      '#side [role="listitem"]',
-      '#pane-side [role="listitem"]',
-      '[aria-label*="Chat list"] [role="listitem"]',
-      '[aria-label*="Chat list"] > div > div',
-    ];
-    for (const s of sels) {
-      const found = Array.from(document.querySelectorAll(s));
-      if (found.length > 0) return found;
-    }
-    // Tabindex fallback
-    const side = document.getElementById('side') ||
-                 document.querySelector('[aria-label*="Chat list"]');
-    if (side) {
-      return Array.from(side.querySelectorAll('[tabindex="-1"],[tabindex="0"]'))
-        .filter(el => el.querySelector('span[dir="auto"],[title]') && el.offsetHeight > 20);
-    }
-    return [];
-  })()
+// ── sleep helper ─────────────────────────────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── Shared cell-selector JS (injected as string) ──────────────────────────────
+const GET_CELLS_FN = `
+function getWaCells() {
+  const sels = [
+    '[data-testid="cell-frame-container"]',
+    '[data-testid^="cell-frame"]',
+    '[data-testid="chat-list-item"]',
+    '#side [role="listitem"]',
+    '#pane-side [role="listitem"]',
+    '[aria-label*="Chat list"] [role="listitem"]',
+    '[aria-label*="Chat list"] > div > div',
+  ];
+  for (const s of sels) {
+    const found = Array.from(document.querySelectorAll(s));
+    if (found.length > 0) return found;
+  }
+  const side = document.getElementById('side') ||
+               document.querySelector('[aria-label*="Chat list"]');
+  if (side) {
+    return Array.from(side.querySelectorAll('[tabindex="-1"],[tabindex="0"]'))
+      .filter(el => el.querySelector('span[dir="auto"],[title]') && el.offsetHeight > 20);
+  }
+  return [];
+}
 `;
 
 // ── IPC: click a contact ──────────────────────────────────────────────────────
-ipcMain.on('wa-click-contact', async (e, index) => {
+// payload: number (index) OR { index, name } — both supported
+ipcMain.on('wa-click-contact', async (e, payload) => {
   if (!waWindow || waWindow.isDestroyed()) return;
-  const i = index | 0;
+  const i    = typeof payload === 'number' ? (payload | 0) : ((payload?.index ?? 0) | 0);
+  const name = typeof payload === 'object'  ? (payload?.name  ?? '') : '';
 
-  // Stop existing capture loop — fresh start for this contact
   if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
 
   try {
-    // ── Step 1: Move waWindow on-screen so sendInputEvent reaches React ──
-    // Place it under icqWindow (same position). icqWindow stays alwaysOnTop.
+    // ── Step 1: Move waWindow on-screen ──────────────────────────────────
     const d   = screen.getPrimaryDisplay();
-    const waW = 1280, waH = 900;
-    const waX = d.bounds.x + Math.floor((d.bounds.width  - waW) / 2);
-    const waY = d.bounds.y + Math.floor((d.bounds.height - waH) / 2);
+    const waX = Math.round(d.bounds.x + (d.bounds.width  - 1280) / 2);
+    const waY = Math.round(d.bounds.y + (d.bounds.height - 900)  / 2);
     waWindow.setPosition(waX, waY);
-    icqWindow?.setAlwaysOnTop(true);   // keep ICQ covering WA
+    // icqWindow stays alwaysOnTop so it visually covers the WA window
+    icqWindow?.setAlwaysOnTop(true);
     icqWindow?.focus();
+    await sleep(300);  // let window settle
 
-    // Let the window settle & React re-render its event listeners
-    await new Promise(r => setTimeout(r, 250));
+    // ── Step 2: Dismiss modal first — press Escape key ───────────────────
+    // sendInputEvent keyboard works even when waWindow isn't the OS focus
+    waWindow.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+    await sleep(30);
+    waWindow.webContents.sendInputEvent({ type: 'keyUp',   keyCode: 'Escape' });
+    await sleep(200);
+    await dismissDownloadNudge();  // DOM-level dismiss as well
+    await sleep(200);
 
-    // ── Step 2: Get cell centre coords (CSS pixels) ──────────────────────
+    // ── Step 3: FOCUS waWindow webContents ───────────────────────────────
+    // Critical: sendInputEvent requires the target webContents to be focused.
+    // webContents.focus() focuses the renderer without changing window Z-order.
+    waWindow.webContents.focus();
+    await sleep(150);
+
+    // ── Step 4: Get cell centre coords + scroll into view ─────────────────
     const cellInfo = await waWindow.webContents.executeJavaScript(`
       (function(){
-        const cells = ${CELL_SELS_JS};
+        ${GET_CELLS_FN}
+        const cells = getWaCells();
         const cell  = cells[${i}];
         if (!cell) return { ok: false, total: cells.length };
+        cell.scrollIntoView({ block: 'nearest', behavior: 'instant' });
         const r  = cell.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) return { ok: false, reason: 'zero-size', total: cells.length };
         const cx = Math.round(r.left + r.width  / 2);
         const cy = Math.round(r.top  + r.height / 2);
-        return { ok: true, cx, cy, total: cells.length, name: cell.textContent?.slice(0,40) };
+        const inView = cx > 0 && cy > 0 && cx < window.innerWidth && cy < window.innerHeight;
+        return { ok: true, cx, cy, inView, total: cells.length, name: cell.textContent?.slice(0,40) };
       })()`);
 
-    console.log('[ICQ] wa-click-contact i=%d info=%s', i, JSON.stringify(cellInfo));
+    console.log('[ICQ] click-contact i=%d name="%s" cellInfo=%s', i, name, JSON.stringify(cellInfo));
 
     if (cellInfo?.ok) {
-      // ── Step 3: sendInputEvent — real mouse events, React picks these up ──
       const { cx, cy } = cellInfo;
+
+      // ── Step 5a: sendInputEvent — real OS-level mouse events ─────────
       waWindow.webContents.sendInputEvent({ type: 'mouseMove',  x: cx, y: cy });
-      await new Promise(r => setTimeout(r, 60));
+      await sleep(40);
       waWindow.webContents.sendInputEvent({ type: 'mouseDown',  x: cx, y: cy, button: 'left', clickCount: 1 });
-      await new Promise(r => setTimeout(r, 60));
+      await sleep(40);
       waWindow.webContents.sendInputEvent({ type: 'mouseUp',    x: cx, y: cy, button: 'left', clickCount: 1 });
-      console.log('[ICQ] sent mouse click at (%d,%d) for "%s"', cx, cy, cellInfo.name);
-    } else {
-      // Fallback if coords not found — DOM click
-      console.warn('[ICQ] cell coords not found (total=%d), trying DOM click', cellInfo?.total);
+      console.log('[ICQ] sendInputEvent click at (%d,%d)', cx, cy);
+      await sleep(150);
+
+      // ── Step 5b: Synthetic PointerEvent + MouseEvent (belt+suspenders) ──
+      // Dispatched directly in the renderer — works even if sendInputEvent missed
       await waWindow.webContents.executeJavaScript(`
         (function(){
-          const cells = ${CELL_SELS_JS};
+          ${GET_CELLS_FN}
+          const cells = getWaCells();
           const cell  = cells[${i}];
-          if (cell) cell.click();
+          if (!cell) { console.warn('[WA] cell ${i} not found for synthetic click'); return; }
+          cell.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+          const r  = cell.getBoundingClientRect();
+          const cx = r.left + r.width  / 2;
+          const cy = r.top  + r.height / 2;
+
+          // Dispatch on both the cell AND its first child (React handlers may be on either)
+          const targets = [cell, cell.firstElementChild, cell.querySelector('div')].filter(Boolean);
+          targets.forEach(t => {
+            const pOpts = { bubbles:true, cancelable:true, clientX:cx, clientY:cy,
+                            button:0, buttons:1, pointerId:1, pointerType:'mouse', isPrimary:true };
+            const mOpts = { bubbles:true, cancelable:true, clientX:cx, clientY:cy, button:0, buttons:1 };
+            t.dispatchEvent(new PointerEvent('pointerover',  pOpts));
+            t.dispatchEvent(new MouseEvent ('mouseover',     mOpts));
+            t.dispatchEvent(new PointerEvent('pointermove',  pOpts));
+            t.dispatchEvent(new MouseEvent ('mousemove',     mOpts));
+            t.dispatchEvent(new PointerEvent('pointerdown',  pOpts));
+            t.dispatchEvent(new MouseEvent ('mousedown',     mOpts));
+            t.dispatchEvent(new PointerEvent('pointerup',    { ...pOpts, buttons:0 }));
+            t.dispatchEvent(new MouseEvent ('mouseup',       { ...mOpts, buttons:0 }));
+            t.dispatchEvent(new MouseEvent ('click',         { ...mOpts, buttons:0 }));
+          });
+          console.log('[WA] synthetic click dispatched on', targets.length, 'targets at', Math.round(cx), Math.round(cy));
         })()`);
+
+    } else {
+      console.warn('[ICQ] cell not found — index=%d total=%d', i, cellInfo?.total);
     }
 
-    // ── Step 4: Dismiss the "Download WhatsApp for Mac" nudge ────────────
-    setTimeout(dismissDownloadNudge, 600);
-    setTimeout(dismissDownloadNudge, 1400);  // second attempt after chat load
+    // ── Step 6: Dismiss modal again post-click ────────────────────────────
+    await sleep(300);
+    await dismissDownloadNudge();
+    setTimeout(dismissDownloadNudge, 800);
 
-    // ── Step 5: Move WA back off-screen (after click registered) ─────────
+    // ── Step 7: Move WA back off-screen ──────────────────────────────────
     setTimeout(() => {
-      const pos = getOffscreenPos();
-      if (waWindow && !waWindow.isDestroyed()) waWindow.setPosition(pos.x, pos.y);
-    }, 500);
+      if (waWindow && !waWindow.isDestroyed()) waWindow.setPosition(getOffscreenPos().x, getOffscreenPos().y);
+    }, 700);
 
-    // ── Step 6: Start capture loop ────────────────────────────────────────
-    setTimeout(captureChat,  1500);   // first capture after chat has loaded
-    setTimeout(startCapture, 2000);   // then every 1.5s
+    // ── Step 8: Verify chat opened, then start capture ────────────────────
+    setTimeout(async () => {
+      if (!waWindow || waWindow.isDestroyed()) return;
+      try {
+        const mainLen = await waWindow.webContents.executeJavaScript(
+          `(document.getElementById('main') || document.querySelector('[data-testid="conversation-panel"]') || {innerText:''}).innerText.length`
+        );
+        console.log('[ICQ] post-click #main.innerText.length =', mainLen,
+                    mainLen > 50 ? '✅ chat opened' : '⚠️ still empty');
+      } catch(err) { console.error('[ICQ] verify error:', err.message); }
+    }, 1800);
+
+    setTimeout(captureChat,  2000);  // first capture
+    setTimeout(startCapture, 2500);  // then every 1.5s
 
   } catch (err) { console.error('[ICQ] click error:', err.message, err.stack); }
 });

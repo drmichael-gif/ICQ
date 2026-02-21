@@ -464,7 +464,7 @@ function selectContact(i) {
   selIdx = i;
   const c = contacts[i];
   if (!c) return;
-  bridge.clickContact(i);
+  bridge.clickContact(i, c.name);
 
   // Update chat title & nick immediately
   $('chat-tb-title').textContent = c.name + ' Message Dialog';

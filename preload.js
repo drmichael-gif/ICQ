@@ -10,7 +10,8 @@ contextBridge.exposeInMainWorld('icq', {
   close:        () => ipcRenderer.send('win-close'),
 
   // User actions → hidden WhatsApp
-  clickContact: (index) => ipcRenderer.send('wa-click-contact', index),
+  // Pass { index, name } so main process can log/verify the correct contact
+  clickContact: (index, name) => ipcRenderer.send('wa-click-contact', { index, name: name || '' }),
   sendMessage:  (text)  => ipcRenderer.send('wa-send-message', text),
   showWa:       ()      => ipcRenderer.send('wa-show'),
 
