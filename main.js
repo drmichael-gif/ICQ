@@ -38,27 +38,50 @@ function patchSession(sess) {
 const CONTACT_SCRAPER = `
 (function() {
   try {
+    // ── Try every known selector for contact rows ──
     let cells = [];
     const sels = [
       '[data-testid="cell-frame-container"]',
       '[data-testid^="cell-frame"]',
+      '[data-testid="chat-list-item"]',
       '#side [role="listitem"]',
+      '#pane-side [role="listitem"]',
       '[aria-label*="Chat list"] [role="listitem"]',
+      '[aria-label*="Chat list"] > div > div',
+      '#side > div > div > div[tabindex]',
+      '#pane-side > div[tabindex]',
     ];
     for (const s of sels) {
-      const found = Array.from(document.querySelectorAll(s));
-      if (found.length > 0) { cells = found; break; }
+      try {
+        const found = Array.from(document.querySelectorAll(s));
+        if (found.length > 0) { cells = found; break; }
+      } catch(_) {}
     }
+
+    // ── Fallback: any tabindex="-1" or "0" child inside #side with a name span ──
+    if (!cells.length) {
+      const side = document.getElementById('side') ||
+                   document.querySelector('[aria-label*="Chat list"]')?.closest('#side');
+      if (side) {
+        const candidates = Array.from(side.querySelectorAll('[tabindex="-1"],[tabindex="0"]'));
+        cells = candidates.filter(el =>
+          el.querySelector('span[dir="auto"], [title], [aria-label]') &&
+          el.offsetHeight > 20
+        );
+      }
+    }
+
     const contacts = [];
     cells.forEach((cell, i) => {
       const nameEl =
         cell.querySelector('[data-testid="cell-frame-title"] span') ||
         cell.querySelector('[data-testid="cell-frame-title"]') ||
         cell.querySelector('span[dir="auto"]') ||
+        cell.querySelector('[title]') ||
         cell.querySelector('span[title]');
       if (!nameEl) return;
       const name = (nameEl.textContent || nameEl.getAttribute('title') || '').trim();
-      if (!name || name.length > 100) return;
+      if (!name || name.length > 100 || name.length < 1) return;
       const unreadEl = cell.querySelector('[data-testid="icon-unread-count"]') ||
                        cell.querySelector('[aria-label*="unread"]');
       const timeEl   = cell.querySelector('[data-testid="msg-time"]');
@@ -70,6 +93,15 @@ const CONTACT_SCRAPER = `
         preview: allSpans[1]?.textContent?.trim() || '',
       });
     });
+
+    // ── Diagnostics (visible in WhatsApp DevTools console) ──
+    const side = document.getElementById('side');
+    const testIds = side
+      ? [...new Set(Array.from(side.querySelectorAll('[data-testid]'))
+          .map(el => el.getAttribute('data-testid')).filter(Boolean))].slice(0, 15)
+      : [];
+    console.log('[ICQ scraper] #side:', !!side, 'cells:', cells.length, 'contacts:', contacts.length, 'testids:', testIds.join(','));
+
     const chatEl =
       document.querySelector('[data-testid="conversation-header"] span[dir="auto"]') ||
       document.querySelector('#main header span[dir="auto"]');
@@ -78,7 +110,7 @@ const CONTACT_SCRAPER = `
       !!document.getElementById('side') ||
       !!document.querySelector('[data-testid="chat-list"]') ||
       !!document.querySelector('[aria-label*="Chat list"]');
-    return { ok: true, contacts, chatName: chatEl?.textContent?.trim() || '', isLoggedIn };
+    return { ok: true, contacts, chatName: chatEl?.textContent?.trim() || '', isLoggedIn, _testIds: testIds };
   } catch(e) { return { ok: false, error: e.message }; }
 })()
 `;
@@ -93,7 +125,9 @@ async function scrapeContacts() {
     if (data.isLoggedIn && !statusSent) {
       statusSent = true;
       icqWindow.webContents.send('wa-status', { status: 'ready' });
-      console.log('[ICQ] WA ready — contacts:', data.contacts.length);
+    }
+    if (data._testIds?.length) {
+      console.log('[ICQ main] contacts:', data.contacts.length, 'testIds in #side:', data._testIds.join(','));
     }
     icqWindow.webContents.send('wa-data', data);
   } catch (e) { console.error('[ICQ] scrapeContacts error:', e.message); }
@@ -152,14 +186,11 @@ function createWaWindow() {
   });
 
   waWindow.webContents.setUserAgent(WA_UA);
-  waWindow.webContents.setBackgroundThrottling(false);
 
-  // ── Load WhatsApp Web ──
+  // ── Exact order from fdebb7c (the commit where contacts worked) ──────────
   waWindow.loadURL('https://web.whatsapp.com/', { userAgent: WA_UA });
-
-  // ── Apply viewport IMMEDIATELY after loadURL (same call-stack, before WASM starts)
-  // This is the exact timing from fdebb7c that made contacts work.
-  // The V8 crash at 2d68931 was from setOpacity(0)+showInactive(), NOT from this call.
+  waWindow.webContents.setBackgroundThrottling(false);
+  waWindow.setSize(1280, 900);          // force native window size even when hidden
   waWindow.webContents.enableDeviceEmulation({
     screenPosition:    'desktop',
     screenSize:        { width: 1280, height: 900 },
