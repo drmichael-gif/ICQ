@@ -79,58 +79,75 @@ const SCRAPER = `
     });
 
     // ── MESSAGES: current open chat ──
-    // WhatsApp gives every message a data-id like "true_xxx" (sent) or "false_xxx" (received)
     const messages = [];
-    let msgEls = Array.from(document.querySelectorAll('[data-id]'));
+    const main = document.getElementById('main');
+    if (main) {
+      // Strategy 1: elements with data-id scoped inside #main only
+      let msgEls = Array.from(main.querySelectorAll('[data-id]'));
 
-    // Fallback selectors if data-id doesn't work
-    if (!msgEls.length) {
-      const fallbacks = [
-        '[data-testid="msg-container"]',
-        '.message-in, .message-out',
-        '[class*="message-in"], [class*="message-out"]',
-        '#main [tabindex="-1"][data-id]',
-        '#main [role="row"]',
-      ];
-      for (const s of fallbacks) {
-        try { msgEls = Array.from(document.querySelectorAll(s)); } catch(_) {}
-        if (msgEls.length) break;
+      // Strategy 2: msg-container data-testid
+      if (!msgEls.length) {
+        msgEls = Array.from(main.querySelectorAll('[data-testid="msg-container"]'));
       }
+
+      // Strategy 3: data-pre-plain-text holder (each message row often has this)
+      if (!msgEls.length) {
+        msgEls = Array.from(main.querySelectorAll('[data-pre-plain-text]'));
+      }
+
+      // Strategy 4: any copyable-text span parent divs inside #main
+      if (!msgEls.length) {
+        const spans = Array.from(main.querySelectorAll('span.selectable-text.copyable-text'));
+        // Walk up to get unique message containers
+        const seen = new Set();
+        spans.forEach(s => {
+          let p = s.parentElement;
+          for (let i = 0; i < 6 && p && p !== main; i++, p = p.parentElement) {
+            if (!seen.has(p)) { seen.add(p); }
+          }
+        });
+        msgEls = Array.from(seen);
+      }
+
+      msgEls.slice(-80).forEach(msg => {
+        // Text extraction
+        let text = '';
+        const picks = [
+          msg.querySelector('[data-testid="balloon-text"] span.selectable-text'),
+          msg.querySelector('[data-testid="balloon-text"]'),
+          msg.querySelector('span.selectable-text.copyable-text'),
+          msg.querySelector('span.selectable-text'),
+          msg.querySelector('.copyable-text'),
+        ];
+        for (const el of picks) {
+          if (el) { text = el.textContent.trim(); if (text) break; }
+        }
+        if (!text || text.length > 2000) return;
+
+        // Time: data-pre-plain-text="[5:16 PM, 1/1/2024] Name: "
+        let timeStr = '';
+        const prePlain = msg.getAttribute('data-pre-plain-text') ||
+                         msg.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || '';
+        if (prePlain) {
+          const tm = prePlain.match(/\\[(\\d{1,2}:\\d{2}[^\\]]*)/);
+          if (tm) timeStr = tm[1].trim();
+        }
+        if (!timeStr) {
+          const metaEl = msg.querySelector('[data-testid="msg-meta"]');
+          const tm2 = (metaEl?.textContent || '').match(/\\d{1,2}:\\d{2}\\s*[APap][Mm]?/);
+          if (tm2) timeStr = tm2[0];
+        }
+
+        // isOut: data-id "true_xxx" = sent by us
+        const dataId = msg.getAttribute('data-id') || '';
+        const isOut  = dataId.startsWith('true_') ||
+                       !!msg.querySelector('[data-testid="msg-dblcheck"]') ||
+                       !!msg.querySelector('[data-testid="msg-check"]') ||
+                       msg.className.includes('message-out');
+
+        messages.push({ text, time: timeStr, isOut });
+      });
     }
-
-    msgEls.slice(-80).forEach(msg => {  // last 80 messages max
-      // Extract text — try every known location
-      let text = '';
-      const textCandidates = [
-        msg.querySelector('[data-testid="balloon-text"] span.selectable-text'),
-        msg.querySelector('[data-testid="balloon-text"] span'),
-        msg.querySelector('[data-testid="balloon-text"]'),
-        msg.querySelector('span.selectable-text.copyable-text'),
-        msg.querySelector('span[class*="selectable-text"]'),
-        msg.querySelector('.copyable-text'),
-      ];
-      for (const el of textCandidates) {
-        if (el) { text = el.textContent.trim(); if (text) break; }
-      }
-      if (!text) return;
-      if (text.length > 2000) return; // skip huge blobs
-
-      // Time
-      const timeEl = msg.querySelector('[data-testid="msg-meta"]') ||
-                     msg.querySelector('[data-pre-plain-text]') ||
-                     msg.querySelector('span[class*="timestamp"]');
-      const timeStr = (timeEl?.textContent || '').match(/\\d{1,2}:\\d{2}\\s*[APap][Mm]?/)?.[0] || '';
-
-      // isOut: data-id starts with "true_" = sent by us
-      const dataId  = msg.getAttribute('data-id') || '';
-      const isOut   = dataId.startsWith('true_') ||
-                      msg.classList.contains('message-out') ||
-                      msg.className.includes('message-out') ||
-                      !!msg.querySelector('[data-testid="msg-dblcheck"]') ||
-                      !!msg.querySelector('[data-testid="msg-check"]');
-
-      messages.push({ text, time: timeStr, isOut });
-    });
 
     // ── Current chat name ──
     const chatEl =
@@ -145,6 +162,7 @@ const SCRAPER = `
       !!document.querySelector('[data-testid="chat-list"]') ||
       !!document.querySelector('[aria-label*="Chat list"]');
 
+    const mainEl2 = document.getElementById('main');
     return {
       ok:          true,
       contacts,
@@ -152,6 +170,10 @@ const SCRAPER = `
       chatName:    chatEl?.textContent?.trim() || '',
       isLoggedIn,
       cellSel:     cells.length > 0 ? 'found ' + cells.length : 'none',
+      mainExists:  !!mainEl2,
+      mainDataIds: mainEl2 ? mainEl2.querySelectorAll('[data-id]').length : 0,
+      mainMsgCont: mainEl2 ? mainEl2.querySelectorAll('[data-testid="msg-container"]').length : 0,
+      mainSelText: mainEl2 ? mainEl2.querySelectorAll('span.selectable-text').length : 0,
     };
   } catch(e) {
     return { ok: false, error: e.message, stack: e.stack };
@@ -175,6 +197,10 @@ async function extractAndSend() {
       statusSent = true;
       icqWindow.webContents.send('wa-status', { status: 'ready' });
       console.log('[ICQ] WA logged in, contacts:', data.contacts.length, 'sel:', data.cellSel);
+    }
+    // Log message debug info
+    if (data.chatName) {
+      console.log(`[ICQ] Chat="${data.chatName}" msgs=${data.messages.length} main=${data.mainExists} dataIds=${data.mainDataIds} msgCont=${data.mainMsgCont} selText=${data.mainSelText}`);
     }
 
     icqWindow.webContents.send('wa-data', data);
@@ -295,6 +321,32 @@ ipcMain.on('wa-show', () => {
   }, 3000);
 });
 
+// ── Force-render message virtual scroll (same trick as contacts) ──────────────
+async function forceRenderMessages() {
+  if (!waWindow || waWindow.isDestroyed()) return;
+  try {
+    await waWindow.webContents.executeJavaScript(`
+      (function(){
+        // Find the messages scroll container and nudge it
+        const containers = [
+          document.querySelector('[data-testid="conversation-panel-messages"]'),
+          document.querySelector('#main .copyable-area'),
+          document.querySelector('#main > div:nth-child(2)'),
+          document.querySelector('#main'),
+        ].filter(Boolean);
+        containers.forEach(c => {
+          const h = c.scrollHeight;
+          c.scrollTop = h;
+          c.dispatchEvent(new Event('scroll', {bubbles:true}));
+          c.scrollTop = Math.max(0, h - 10);
+          c.dispatchEvent(new Event('scroll', {bubbles:true}));
+        });
+        window.dispatchEvent(new Event('resize'));
+      })()
+    `);
+  } catch (e) { console.error('[ICQ] forceRenderMessages error:', e.message); }
+}
+
 // ── IPC: click a contact ──────────────────────────────────────────────────────
 ipcMain.on('wa-click-contact', async (e, index) => {
   if (!waWindow || waWindow.isDestroyed()) return;
@@ -316,6 +368,9 @@ ipcMain.on('wa-click-contact', async (e, index) => {
         if (cells[${i}]) cells[${i}].click();
       })()
     `);
+    // After WA opens the chat, force the message virtual scroll to render
+    setTimeout(forceRenderMessages, 1200);
+    setTimeout(forceRenderMessages, 2500); // second nudge in case first was too early
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
 
