@@ -387,32 +387,7 @@ ipcMain.on('wa-show', () => {
   }, 3000);
 });
 
-// ── CDP click helper (Playwright-level reliability) ──────────────────────────
-let cdpAttached = false;
-async function cdpClick(x, y) {
-  if (!waWindow || waWindow.isDestroyed()) return false;
-  try {
-    const dbg = waWindow.webContents.debugger;
-    if (!cdpAttached) {
-      try { dbg.attach('1.3'); cdpAttached = true; }
-      catch (e) {
-        if (e.message?.includes('already')) cdpAttached = true;
-        else throw e;
-      }
-    }
-    const base = { x, y, modifiers: 0, button: 'left', buttons: 1, clickCount: 1,
-                   deltaX: 0, deltaY: 0, pointerType: 'mouse' };
-    await dbg.sendCommand('Input.dispatchMouseEvent', { ...base, type: 'mouseMoved',   button: 'none', buttons: 0 });
-    await dbg.sendCommand('Input.dispatchMouseEvent', { ...base, type: 'mousePressed'  });
-    await new Promise(r => setTimeout(r, 60));
-    await dbg.sendCommand('Input.dispatchMouseEvent', { ...base, type: 'mouseReleased' });
-    return true;
-  } catch (e) {
-    console.error('[ICQ] CDP click error:', e.message);
-    cdpAttached = false;
-    return false;
-  }
-}
+// (CDP removed — debugger.attach corrupts WA's JS context)
 
 // ── IPC: click a contact ──────────────────────────────────────────────────────
 ipcMain.on('wa-click-contact', async (e, index) => {
@@ -420,7 +395,7 @@ ipcMain.on('wa-click-contact', async (e, index) => {
   const i = index | 0;
   stopMsgLoop();
   try {
-    // Get cell center coordinates
+    // Get cell center (viewport-relative CSS pixels)
     const info = await waWindow.webContents.executeJavaScript(`
       (function(){
         const sels = [
@@ -437,35 +412,44 @@ ipcMain.on('wa-click-contact', async (e, index) => {
         }
         const cell = cells[${i}];
         if (!cell) return null;
-        const r = cell.getBoundingClientRect();
-        return { x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2),
-                 name: cell.textContent?.slice(0,40)||'', total: cells.length };
+        const r   = cell.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        return {
+          // sendInputEvent needs physical pixels on macOS Retina
+          x: Math.round((r.left + r.width  / 2) * dpr),
+          y: Math.round((r.top  + r.height / 2) * dpr),
+          name: cell.textContent?.slice(0, 40) || '',
+          total: cells.length,
+        };
       })()`);
 
     if (!info) {
-      console.warn('[ICQ] cell', i, 'not found');
+      console.warn('[ICQ] cell', i, 'not found in WA DOM');
       setTimeout(startMsgLoop, 2000);
       return;
     }
+    console.log('[ICQ] clicking contact', i, JSON.stringify(info));
 
-    console.log('[ICQ] CDP-clicking contact', i, JSON.stringify(info));
-    await cdpClick(info.x, info.y);
+    // ── Move WA window BEHIND the ICQ window so sendInputEvent works
+    //    (macOS drops input events for fully-offscreen windows)
+    //    ICQ is alwaysOnTop, so WA stays invisible to the user. ──
+    if (icqWindow && !icqWindow.isDestroyed()) {
+      const b = icqWindow.getBounds();
+      waWindow.setPosition(b.x, b.y);
+    }
+    await new Promise(r => setTimeout(r, 80)); // let compositor settle
 
-    // Verify chat opened 3s later
-    setTimeout(async () => {
-      try {
-        const s = await waWindow.webContents.executeJavaScript(`
-          (function(){
-            const p = document.getElementById('main') ||
-                      document.querySelector('[data-testid="conversation-panel"]') ||
-                      document.querySelector('[data-testid="msg-container"]');
-            return { found: !!p, id: p?.id||p?.getAttribute('data-testid')||'?' };
-          })()`);
-        console.log('[ICQ] chat panel 3s post-click:', JSON.stringify(s));
-      } catch(_) {}
-    }, 3000);
+    waWindow.webContents.sendInputEvent({ type: 'mouseMove',  x: info.x, y: info.y });
+    waWindow.webContents.sendInputEvent({ type: 'mouseDown',  x: info.x, y: info.y, button: 'left', clickCount: 1 });
+    await new Promise(r => setTimeout(r, 60));
+    waWindow.webContents.sendInputEvent({ type: 'mouseUp',    x: info.x, y: info.y, button: 'left', clickCount: 1 });
 
-    setTimeout(startMsgLoop, 2000);
+    // Give WA time to open the chat, then return it off-screen
+    await new Promise(r => setTimeout(r, 700));
+    const pos = getOffscreenPos();
+    waWindow.setPosition(pos.x, pos.y);
+
+    setTimeout(startMsgLoop, 500);
   } catch (err) { console.error('[ICQ] click error:', err.message); }
 });
 
@@ -508,6 +492,7 @@ function createIcqWindow() {
     width: 1100, height: 780,
     minWidth: 800, minHeight: 580,
     title: 'ICQ', frame: false,
+    alwaysOnTop: true,           // stays above WA window during click
     backgroundColor: '#C0C0C0', show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
