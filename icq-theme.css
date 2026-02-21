@@ -172,6 +172,17 @@ button[data-testid*="filter"],
   display: none !important;
 }
 
+/* ── HIDE #side compose / new-chat buttons ── */
+[data-testid="compose-btn"],
+[data-testid="new-chat-button"],
+[data-testid="menu-bar"],
+#side [data-testid="menu-bar"],
+button[aria-label*="New chat" i],
+button[aria-label*="New group" i],
+#side > div > div:first-child > div:last-child {
+  display: none !important;
+}
+
 /* ── WIN98 TITLE BAR ── */
 .icq-titlebar {
   height: 22px;
@@ -245,14 +256,23 @@ button[data-testid*="filter"],
   display: none !important; width: 0 !important; height: 0 !important;
 }
 
-/* The cell itself */
+/* The cell itself — ensure it's always visible with content */
 [data-testid="cell-frame-container"] {
   background: var(--cl-bg) !important;
   border-bottom: none !important;
   padding: 1px 4px !important;
-  min-height: 0 !important; height: auto !important;
+  min-height: 22px !important; height: auto !important;
   cursor: pointer !important;
   transition: none !important;
+  display: flex !important; align-items: center !important;
+}
+/* Content column — show it */
+[data-testid="cell-frame-container"] > div > div:last-child {
+  display: block !important; flex: 1 !important; min-width: 0 !important;
+}
+/* Name row inside content column */
+[data-testid="cell-frame-container"] > div > div:last-child > div:first-child {
+  display: flex !important; align-items: center !important;
 }
 [data-testid="cell-frame-container"]:hover { background: var(--cl-hover) !important; }
 [data-testid="cell-frame-container"][aria-selected="true"],
